@@ -142,6 +142,83 @@ edit_mode = st.toggle("✏️ Edit mode", value=False,
 person_filter = st.multiselect("Highlight people", people, placeholder="Show everyone",
                                help="Dim projects that don't include the selected people.")
 
+# ── Collaboration view: who works together ───────────────────────────────────
+def _collab_index(active_list):
+    from collections import defaultdict
+    pair = defaultdict(list)      # frozenset({a,b}) -> [project names]
+    for p in active_list:
+        team = dedupe_team((p.get("overview") or {}).get("team"))
+        names = sorted({m["name"] for m in team})
+        pname = (p.get("overview") or {}).get("name") or p["id"]
+        for i in range(len(names)):
+            for j in range(i + 1, len(names)):
+                pair[frozenset((names[i], names[j]))].append(pname)
+    return pair
+
+def _dot_id(s):
+    return '"' + str(s).replace('\\', '').replace('"', '') + '"'
+
+with st.expander("🤝 Who's working together", expanded=False):
+    pair = _collab_index(active)
+    if not pair:
+        st.caption("No shared-project collaborations found.")
+    else:
+        f1, f2 = st.columns([2, 2])
+        focus = f1.selectbox("Focus on a person", ["— everyone —"] + people,
+                             help="Show only this person and their collaborators.")
+        focus = None if focus.startswith("—") else focus
+        max_w = max(len(v) for v in pair.values())
+        min_shared = f2.slider("Minimum shared projects (edge)", 1, max(2, max_w), 1,
+                               help="Hide pairs who share fewer than this many active projects.")
+
+        edges, nodes = [], set()
+        for pr, projs in pair.items():
+            w = len(projs)
+            if w < min_shared:
+                continue
+            a, b = tuple(pr)
+            if focus and focus not in (a, b):
+                continue
+            nodes.add(a); nodes.add(b)
+            edges.append((a, b, w))
+        if focus:
+            nodes.add(focus)
+
+        if not edges:
+            st.info(("No co-workers" if focus else "No pairs") +
+                    f" share ≥ {min_shared} active projects at this threshold.")
+        else:
+            dot = ["graph G {",
+                   'graph [layout=neato, overlap=false, splines=true, bgcolor="transparent"];',
+                   'node [shape=ellipse, style="filled", fillcolor="#eef1f5", color="#c7d0de", '
+                   'fontname="Helvetica", fontsize=11, fontcolor="#1a2030"];',
+                   'edge [color="#9aa6b8"];']
+            for n in sorted(nodes):
+                if focus and n == focus:
+                    dot.append(f'{_dot_id(n)} [fillcolor="#5a5fc0", fontcolor="white", color="#5a5fc0"];')
+                else:
+                    dot.append(f'{_dot_id(n)} ;')
+            for a, b, w in edges:
+                pen = min(1 + (w - 1) * 0.9, 7)
+                dot.append(f'{_dot_id(a)} -- {_dot_id(b)} [penwidth={pen:.1f}, '
+                           f'label="{w if w > 1 else ""}", fontsize=9, fontcolor="#727d94"];')
+            dot.append("}")
+            st.graphviz_chart("\n".join(dot), use_container_width=True)
+            st.caption("Each line links people who share an active project; thicker = more shared projects.")
+
+            if focus:
+                import pandas as pd
+                rows = []
+                for pr, projs in pair.items():
+                    if focus in pr and len(projs) >= min_shared:
+                        other = next(x for x in pr if x != focus)
+                        rows.append({"Collaborator": other, "# shared": len(projs),
+                                     "Shared projects": ", ".join(sorted(projs))})
+                rows.sort(key=lambda r: (-r["# shared"], r["Collaborator"]))
+                if rows:
+                    st.markdown(f"**{focus}** works with **{len(rows)}** {'person' if len(rows)==1 else 'people'}:")
+                    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
 # ── Add project ──────────────────────────────────────────────────────────────
 if edit_mode:
     with st.expander("➕ Add a project"):
