@@ -35,6 +35,8 @@ STAGE_LABELS = {
 STAGES = list(STAGE_LABELS.keys())
 EDITABLE_STAGES = [s for s in STAGES if s not in ("complete", "sunsetted")]
 TEAM_ROLES = ["Lead", "Support", "Advisor", "Collaborator"]
+# People allowed to make edits (everyone else is view-only)
+EDITORS = ["Ana", "Carly", "Chris", "Lily", "Monica", "Paul", "Susanna"]
 ROLE_RANK = {"Lead": 0, "Collaborator": 1, "Support": 2, "Advisor": 3}
 EXCLUDE = {"complete", "sunsetted"}
 REPO_DEFAULT = "scale-nssa/project-database"
@@ -71,6 +73,9 @@ def load_roster():
 
 def apply_and_save(pid, mutate, summary, editor):
     """Fetch fresh, mutate the one project (or append when pid is None), commit."""
+    if editor not in EDITORS:
+        st.error("You don't have edit permission — select your name (research leads only).")
+        return
     repo = _repo()
     who = (editor or "someone").strip() or "someone"
     if repo:
@@ -131,13 +136,20 @@ st.title("📋 SCALE Active Research Portfolio")
 c1, c2 = st.columns([3, 1])
 with c1:
     st.caption(f"{len(active)} active projects · {len(people)} people · grouped into 4 research buckets. "
-               "Excludes Done & Sunsetted. Live from the project database — **anyone can edit**.")
+               "Excludes Done & Sunsetted. Live from the project database.")
 with c2:
-    st.session_state.editor = st.text_input("Your name (for edit history)", value=st.session_state.editor,
-                                             placeholder="optional")
+    editor_sel = st.selectbox("Editing as", ["— view only —"] + EDITORS,
+                              help="Select your name to make edits. Editing is limited to research leads.")
+st.session_state.editor = editor_sel if editor_sel in EDITORS else ""
+can_edit = st.session_state.editor in EDITORS
 
-edit_mode = st.toggle("✏️ Edit mode", value=False,
-                      help="Turn on to move projects between buckets and edit people, stage, or name.")
+if can_edit:
+    edit_mode = st.toggle("✏️ Edit mode", value=False,
+                          help="Turn on to move projects between buckets and edit people, stage, or name.")
+else:
+    edit_mode = False
+    st.caption("🔒 **View only.** Editing is limited to: " + ", ".join(EDITORS)
+               + ". Choose your name in **Editing as** (top right) to make changes.")
 
 person_filter = st.multiselect("Highlight people", people, placeholder="Show everyone",
                                help="Dim projects that don't include the selected people.")
@@ -321,9 +333,7 @@ for col, bucket in zip(cols, BUCKETS):
                         st.session_state[f"confirm_rm_{pid}"] = True
                     if st.session_state.get(f"confirm_rm_{pid}"):
                         st.warning("Remove this project from the database?")
-                        if st.button("Yes, remove", key=f"yesrm_{pid}"):
-                            def _rm(_):  # noqa
-                                return None
+                        if st.button("Yes, remove", key=f"yesrm_{pid}") and st.session_state.editor in EDITORS:
                             # remove by rebuilding without this id
                             repo = _repo()
                             who = st.session_state.editor or "someone"
