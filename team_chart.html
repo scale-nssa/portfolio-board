@@ -24,6 +24,17 @@
   .dir-card .reports { margin-top: 10px; text-align: left; }
   .dir-card .reports-label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; opacity: .6; margin-bottom: 4px; }
   .dir-card .person { color: var(--ink); min-width: 170px; }
+
+  /* Org layout: research teams in the main column, operations to the side */
+  .org { display: flex; gap: 20px; align-items: flex-start; }
+  .org-main { flex: 1; min-width: 0; }
+  .org-side { flex: 0 0 210px; border-left: 2px dashed #cbd5e1; padding-left: 18px; }
+  .org-side .dir-card { padding: 12px 16px; }
+  @media (max-width: 1100px) {
+    .org { flex-direction: column; }
+    .org-side { border-left: 0; padding-left: 0; border-top: 2px dashed #cbd5e1; padding-top: 16px; width: 100%; }
+    .org-side .dir-card { max-width: 260px; }
+  }
   .connector { height: 24px; width: 2px; background: #cbd5e1; margin: 0 auto; }
   .rail { height: 2px; background: #cbd5e1; margin: 0 calc(10% - 8px); }
 
@@ -104,11 +115,16 @@
 <div class="sub">Vertical teams by senior researcher. Hover over a person to see every team they're on; click them to see their active projects from the portfolio. Badges show how many teams each person supports.</div>
 <div id="detail" class="detail" hidden></div>
 
-<div class="director" id="leaders"></div>
-<div class="connector"></div>
-<div class="rail"></div>
-<div style="height:24px"></div>
-<div class="teams" id="teams"></div>
+<div class="org">
+  <div class="org-main">
+    <div class="director" id="leaders"></div>
+    <div class="connector"></div>
+    <div class="rail"></div>
+    <div style="height:24px"></div>
+    <div class="teams" id="teams"></div>
+  </div>
+  <div class="org-side" id="side"></div>
+</div>
 
 <div class="legend" id="legend"></div>
 
@@ -155,12 +171,16 @@ const personChip = ([n, r], lead) => {
   return `<div class="person${TIME[n] ? " pt" : ""}" data-p="${n}" style="--rc:${ROLE_COLORS[r]}"><div><div>${n}${TIME[n] ? `<span class="time">${TIME[n]}</span>` : ""}</div><div class="r">${r}${projCount(n)}</div>${tag ? `<div>${tag}</div>` : ""}</div><span class="${badgeClass(k)}">${k} team${k > 1 ? "s" : ""}</span></div>`;
 };
 
-// Leadership row (directors with direct reports shown inside their card)
-document.getElementById("leaders").innerHTML = LEADERS.map(l => {
+// Leadership: directors with a "top" team (Monica, ops) sit in a side column beside the
+// research teams; the others sit centered above the teams. Direct reports show inside the card.
+const dirCard = l => {
   const t = TEAMS.find(t => t.top && t.lead === l.name);
   const reports = t ? `<div class="reports"><div class="reports-label">Manages</div>${t.members.map(m => personChip(m, t.lead)).join("")}</div>` : "";
   return `<div class="dir-card"><div class="name">${l.name}</div><div class="role">${l.role}</div>${reports}</div>`;
-}).join(`<div class="peer-link"></div>`);
+};
+const hasTop = l => TEAMS.some(t => t.top && t.lead === l.name);
+document.getElementById("leaders").innerHTML = LEADERS.filter(l => !hasTop(l)).map(dirCard).join(`<div class="peer-link"></div>`);
+document.getElementById("side").innerHTML = LEADERS.filter(hasTop).map(dirCard).join("");
 
 // Team columns
 const teamsEl = document.getElementById("teams");
