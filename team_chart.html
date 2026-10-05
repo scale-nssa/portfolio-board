@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Research Team Structure</title>
+<style>
+  :root {
+    --ink: #1f2430; --muted: #6b7280; --line: #e5e7eb; --bg: #f8f9fb;
+    --staff: #7c3aed; --postdoc: #2563eb; --rda: #0d9488; --ra: #d97706; --researcher: #65a30d;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", system-ui, sans-serif; color: var(--ink); background: var(--bg); margin: 0; padding: 32px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  h2 { font-size: 16px; margin: 40px 0 12px; }
+
+  /* Director */
+  .director { display: flex; justify-content: center; }
+  .dir-card { background: var(--ink); color: #fff; border-radius: 10px; padding: 12px 28px; text-align: center; }
+  .dir-card .name { font-weight: 600; font-size: 16px; }
+  .dir-card .role { font-size: 12px; opacity: .75; }
+  .director { align-items: center; gap: 0; }
+  .peer-link { width: 40px; height: 2px; background: #cbd5e1; }
+  .dir-card .reports { margin-top: 10px; text-align: left; }
+  .dir-card .reports-label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; opacity: .6; margin-bottom: 4px; }
+  .dir-card .person { color: var(--ink); min-width: 170px; }
+  .connector { height: 24px; width: 2px; background: #cbd5e1; margin: 0 auto; }
+  .rail { height: 2px; background: #cbd5e1; margin: 0 calc(10% - 8px); }
+
+  /* Vertical teams */
+  .teams { display: grid; grid-template-columns: repeat(5, minmax(170px, 1fr)); gap: 16px; overflow-x: auto; padding-top: 24px; margin-top: -24px; }
+  .team { background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; position: relative; }
+  .team::before { content: ""; position: absolute; top: -24px; left: 50%; width: 2px; height: 24px; background: #cbd5e1; }
+  .team-head { padding: 12px 14px; border-top: 4px solid var(--c); }
+  .team-head .name { font-weight: 600; font-size: 15px; }
+  .team-head .meta { font-size: 12px; color: var(--muted); }
+  .members { padding: 4px 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .person { display: flex; align-items: center; justify-content: space-between; gap: 6px;
+            padding: 7px 10px; border-radius: 7px; background: #f3f4f6; font-size: 13px;
+            border-left: 3px solid var(--rc); cursor: pointer; transition: all .12s; }
+  .person .r { font-size: 11px; color: var(--muted); }
+  .person.pt { border: 1.5px dotted var(--rc); border-left: 3px dotted var(--rc); }
+  .badge { font-size: 10px; font-weight: 600; border-radius: 999px; padding: 1px 7px; background: #e5e7eb; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+  .primary { font-size: 10px; font-weight: 600; color: #b45309; }
+  .secondary { font-size: 10px; color: var(--muted); font-style: italic; }
+  .planned { font-size: 10px; color: #7c3aed; font-style: italic; }
+  .dot.hollow { background: transparent; box-shadow: inset 0 0 0 2px var(--c); }
+  .dot.star { width: auto; height: auto; background: none; color: var(--c); font-size: 15px; line-height: 1; }
+  .badge.multi { background: #fef3c7; color: #92400e; }
+  .badge.heavy { background: #fee2e2; color: #991b1b; }
+  body.hovering .person { opacity: .3; }
+  body.hovering .person.hl { opacity: 1; background: #fff; box-shadow: 0 0 0 2px var(--rc); }
+
+  /* Legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--muted); margin-top: 16px; }
+  .legend span.pt-key::before { background: none; border: 1.5px dotted var(--muted); box-sizing: border-box; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--rc); margin-right: 5px; vertical-align: -1px; }
+
+  /* Matrix */
+  table { border-collapse: collapse; background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 13px; width: 100%; }
+  th, td { padding: 8px 12px; border-bottom: 1px solid var(--line); text-align: center; }
+  th { background: #f3f4f6; font-weight: 600; font-size: 12px; }
+  td:first-child, th:first-child { text-align: left; }
+  td.role { color: var(--muted); text-align: left; font-size: 12px; white-space: nowrap; }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--c); }
+  tr:hover td { background: #fafafa; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+  .time { font-size: 10px; font-weight: 600; color: #475569; background: #e2e8f0; border-radius: 4px; padding: 0 5px; margin-left: 4px; white-space: nowrap; display: inline-block; }
+
+  /* Workstreams */
+  .ws-group { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 20px 0 8px; }
+  .ws-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+  .ws { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; border-top: 4px solid var(--c); }
+  .ws .name { font-weight: 600; font-size: 15px; }
+  .ws .meta { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .ws .members { padding: 0; }
+  .ws .lead-chip { font-weight: 600; background: #fff; box-shadow: inset 0 0 0 1px var(--line); }
+  .ws .lead-badge { background: var(--rc); color: #fff; }
+  .open-slot { padding: 7px 10px; border-radius: 7px; border: 1.5px dashed #cbd5e1; color: var(--muted); font-size: 12px; font-style: italic; }
+  .ws .check { font-size: 11px; margin-top: 8px; color: #15803d; }
+  .ws .check.warn { color: #b45309; }
+  .ws .ws-projects { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+  .ws .ws-projects .label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 4px; }
+  .ws .proj { font-size: 12px; margin-bottom: 5px; }
+  .ws .proj .who { font-size: 11px; color: var(--muted); }
+  .ws .proj .off { color: #b45309; font-weight: 600; }
+
+  /* Person detail (click a person) */
+  .detail { position: fixed; right: 16px; top: 16px; width: 340px; max-height: 70vh; overflow-y: auto; z-index: 10;
+            background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 14px 16px; font-size: 13px; }
+  .detail .close { float: right; cursor: pointer; color: var(--muted); border: 0; background: none; font-size: 16px; }
+  .detail .name { font-weight: 600; font-size: 15px; }
+  .detail .meta { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .detail .proj { border-left: 3px solid var(--c); padding: 4px 8px; margin-bottom: 6px; background: #f8f9fb; border-radius: 4px; }
+  .detail .proj .sm { font-size: 11px; color: var(--muted); }
+
+  @media print { body { background: #fff; padding: 12px; } .person { cursor: default; } }
+</style>
+</head>
+<body>
+
+<h1>Research Team Structure</h1>
+<div class="sub">Vertical teams by senior researcher. Hover over a person to see every team they're on; click them to see their active projects from the portfolio. Badges show how many teams each person supports.</div>
+<div id="detail" class="detail" hidden></div>
+
+<div class="director" id="leaders"></div>
+<div class="connector"></div>
+<div class="rail"></div>
+<div style="height:24px"></div>
+<div class="teams" id="teams"></div>
+
+<div class="legend" id="legend"></div>
+
+<h2>Workstreams</h2>
+<div class="sub" style="margin-bottom:12px">Everyone on a workstream should also be on the lead's vertical team.</div>
+<h3 class="ws-group">US frontier models</h3>
+<div class="ws-grid" id="ws-frontier"></div>
+<h3 class="ws-group">Projects</h3>
+<div class="ws-grid" id="ws-projects"></div>
+
+<h2>Capacity matrix: who supports which team</h2>
+<div style="overflow-x:auto"><table id="matrix"></table></div>
+<div class="note">★ = primary team · ☆ = planned or possible future primary · ○ = secondary team. Amber = on 2 teams · Red = on 3+ teams. Add % time per team to turn this into a real capacity view.</div>
+
+<script>
+const ROLE_COLORS = { "Staff Researcher": "var(--staff)", "Staff Researcher + Ops": "var(--staff)", "Postdoc": "var(--postdoc)", "Data Scientist": "var(--rda)", "RA": "var(--ra)", "Graduate RA": "var(--ra)", "Researcher": "var(--researcher)", "Ops": "var(--staff)" };
+
+// Data injected by portfolio_board_app.py from data/team_structure.json and data/projects.json
+const D = __TEAM_DATA__;
+const { leaders: LEADERS, teams: TEAMS, primary: PRIMARY, planned: PLANNED, time: TIME, workstreams: WORKSTREAMS } = D;
+const PROJECTS = D.projects;   // name -> [{name, role, bucket, stage}] (active projects only)
+const ALL_PROJECTS = D.all_projects;   // [{name, team: [{name, role}]}]
+const planText = n => { const p = PLANNED[n]; return p.tentative ? `may move to ${p.to}` : `moves to ${p.to} ${p.note}`; };
+const WS_OF = {};
+WORKSTREAMS.forEach(w => [w.lead, ...w.members].forEach(n => (WS_OF[n] ??= []).push(w.name)));
+
+// Tally team memberships per person
+const people = {};
+TEAMS.forEach(t => t.members.forEach(([n, r]) => {
+  people[n] ??= { roles: new Set(), teams: [] };
+  people[n].roles.add(r); people[n].teams.push(t.lead);
+}));
+const badgeClass = n => n >= 3 ? "badge heavy" : n === 2 ? "badge multi" : "badge";
+
+const projOf = n => PROJECTS[n] ?? [];
+const projCount = n => { const c = projOf(n).length; return ` · ${c} project${c === 1 ? "" : "s"}`; };
+
+const personChip = ([n, r], lead) => {
+  const k = people[n].teams.length;
+  const plan = PLANNED[n];
+  const tag = PRIMARY[n] === lead ? `<span class="primary">★ Primary${plan ? " (current)" : ""}</span>${plan ? `<div class="planned">→ ${planText(n)}</div>` : ""}`
+            : plan?.to === lead ? `<span class="planned">☆ ${plan.tentative ? "Possible future primary" : `Future primary (${plan.note})`}</span>`
+            : PRIMARY[n] ? `<span class="secondary">Primary: ${PRIMARY[n]}${plan ? ` → ${plan.to}${plan.tentative ? "?" : ""}` : ""}</span>` : "";
+  return `<div class="person${TIME[n] ? " pt" : ""}" data-p="${n}" style="--rc:${ROLE_COLORS[r]}"><div><div>${n}${TIME[n] ? `<span class="time">${TIME[n]}</span>` : ""}</div><div class="r">${r}${projCount(n)}</div>${tag ? `<div>${tag}</div>` : ""}</div><span class="${badgeClass(k)}">${k} team${k > 1 ? "s" : ""}</span></div>`;
+};
+
+// Leadership row (directors with direct reports shown inside their card)
+document.getElementById("leaders").innerHTML = LEADERS.map(l => {
+  const t = TEAMS.find(t => t.top && t.lead === l.name);
+  const reports = t ? `<div class="reports"><div class="reports-label">Manages</div>${t.members.map(m => personChip(m, t.lead)).join("")}</div>` : "";
+  return `<div class="dir-card"><div class="name">${l.name}</div><div class="role">${l.role}</div>${reports}</div>`;
+}).join(`<div class="peer-link"></div>`);
+
+// Team columns
+const teamsEl = document.getElementById("teams");
+TEAMS.filter(t => !t.top).forEach(t => {
+  const col = document.createElement("div");
+  col.className = "team"; col.style.setProperty("--c", t.color);
+  col.innerHTML = `<div class="team-head"><div class="name">${t.lead}</div><div class="meta">${t.title} · ${t.members.length} ${t.members.length === 1 ? "person" : "people"}</div></div>
+    <div class="members">${t.members.map(m => personChip(m, t.lead)).join("")}</div>`;
+  teamsEl.appendChild(col);
+});
+
+// Workstreams
+const teamOf = lead => TEAMS.find(t => t.lead === lead);
+const isLead = n => TEAMS.some(t => t.lead === n);
+const renderWs = w => {
+  const team = teamOf(w.lead);
+  const offTeam = w.members.filter(n => !isLead(n) && !team.members.some(([m]) => m === n));
+  const leadTitle = n => LEADERS.find(l => l.name === n)?.role ?? "Senior Researcher";
+  const chips = [w.lead, ...w.members].map(n => {
+    if (n === w.lead) return `<div class="person lead-chip" data-p="${n}" style="--rc:${w.color}"><div><div>${n}</div><div class="r">${leadTitle(n)}</div></div><span class="badge lead-badge">Lead</span></div>`;
+    if (isLead(n)) return `<div class="person" data-p="${n}" style="--rc:#94a3b8"><div><div>${n}</div><div class="r">${leadTitle(n)}</div></div></div>`;
+    const [, r] = team.members.find(([m]) => m === n) ?? [n, [...people[n].roles][0]];
+    return `<div class="person${TIME[n] ? " pt" : ""}" data-p="${n}" style="--rc:${ROLE_COLORS[r]}"><div><div>${n}${TIME[n] ? `<span class="time">${TIME[n]}</span>` : ""}</div><div class="r">${r} · primary ${PRIMARY[n]}${PLANNED[n] ? ` → ${PLANNED[n].to}${PLANNED[n].tentative ? "?" : ""}` : ""}</div></div></div>`;
+  }).join("") + w.open.map(r => `<div class="open-slot" style="border-left:3px solid ${ROLE_COLORS[r]}">Open slot · ${r}</div>`).join("");
+  const check = offTeam.length
+    ? `<div class="check warn">⚠ ${offTeam.join(", ")} not on ${w.lead}'s team</div>`
+    : `<div class="check">✓ All members are on ${w.lead}'s team</div>`;
+  // Portfolio projects whose name matches this workstream; flag chart people on them who aren't on the workstream
+  const onWs = new Set([w.lead, ...w.members]);
+  const matched = ALL_PROJECTS.filter(p => (w.match ?? []).some(k => p.name.toLowerCase().includes(k.toLowerCase())));
+  const projList = matched.length ? `<div class="ws-projects"><div class="label">In the portfolio · ${matched.length} active</div>${matched.map(p =>
+    `<div class="proj">${p.name}<div class="who">${p.team.map(m => {
+      const off = people[m.name] && !onWs.has(m.name);
+      const nm = m.role === "Lead" ? `<b>${m.name}</b>` : m.name;
+      return off ? `<span class="off" title="Not on the ${w.name} workstream">${nm}*</span>` : nm;
+    }).join(", ") || "<i>No one assigned</i>"}</div></div>`).join("")}${matched.some(p => p.team.some(m => people[m.name] && !onWs.has(m.name)))
+      ? `<div class="who" style="font-size:11px;color:#b45309">* on a project here but not on this workstream</div>` : ""}</div>` : "";
+  return `<div class="ws" style="--c:${w.color}"><div class="name">${w.name}</div><div class="meta">${w.members.length + 1} people${w.open.length ? ` · ${w.open.length} open` : ""}</div>
+    <div class="members">${chips}</div>${check}${projList}</div>`;
+};
+document.getElementById("ws-frontier").innerHTML = WORKSTREAMS.filter(w => w.group === "frontier").map(renderWs).join("");
+document.getElementById("ws-projects").innerHTML = WORKSTREAMS.filter(w => w.group === "projects").map(renderWs).join("");
+
+// Hover highlighting
+document.querySelectorAll(".person").forEach(el => {
+  el.addEventListener("mouseenter", () => {
+    document.body.classList.add("hovering");
+    document.querySelectorAll(`.person[data-p="${el.dataset.p}"]`).forEach(x => x.classList.add("hl"));
+  });
+  el.addEventListener("mouseleave", () => {
+    document.body.classList.remove("hovering");
+    document.querySelectorAll(".person.hl").forEach(x => x.classList.remove("hl"));
+  });
+});
+
+// Click a person to see their active portfolio projects
+const BUCKET_COLOR = D.bucket_colors;
+const detail = document.getElementById("detail");
+const showDetail = n => {
+  const p = people[n], projs = projOf(n);
+  const roles = p ? [...p.roles].filter(r => r !== "Ops" || p.roles.size === 1).join(" / ") : (LEADERS.find(l => l.name === n)?.role ?? "Senior Researcher");
+  const prim = PRIMARY[n] ? `Primary: ${PRIMARY[n]}${PLANNED[n] ? ` (${planText(n)})` : ""}` : "";
+  detail.innerHTML = `<button class="close" aria-label="Close">✕</button><div class="name">${n}${TIME[n] ? `<span class="time">${TIME[n]}</span>` : ""}</div>
+    <div class="meta">${[roles, prim, p ? `Teams: ${p.teams.join(", ")}` : "", WS_OF[n] ? `Workstreams: ${WS_OF[n].join(", ")}` : ""].filter(Boolean).join("<br>")}</div>
+    <div class="meta" style="margin-bottom:6px"><b>${projs.length} active project${projs.length === 1 ? "" : "s"}</b> in the portfolio</div>
+    ${projs.map(x => `<div class="proj" style="--c:${BUCKET_COLOR[x.bucket] ?? "#94a3b8"}">${x.name}<div class="sm">${x.role || "Team"} · ${x.stage} · ${x.bucket}</div></div>`).join("") || `<div class="sm">None listed.</div>`}`;
+  detail.hidden = false;
+  detail.querySelector(".close").onclick = () => { detail.hidden = true; };
+};
+document.querySelectorAll(".person[data-p]").forEach(el => el.addEventListener("click", () => showDetail(el.dataset.p)));
+
+// Legend
+document.getElementById("legend").innerHTML =
+  [["Staff Researcher","var(--staff)"],["Researcher","var(--researcher)"],["Postdoc","var(--postdoc)"],["Data Scientist","var(--rda)"],["RA / Graduate RA","var(--ra)"]]
+  .map(([l, c]) => `<span style="--rc:${c}">${l}</span>`).join("") + `<span class="pt-key">Dotted box = part-time</span>`;
+
+// Matrix, sorted by number of teams (most shared first)
+const names = Object.keys(people).sort((a, b) => people[b].teams.length - people[a].teams.length || a.localeCompare(b));
+document.getElementById("matrix").innerHTML =
+  `<tr><th>Person</th><th>Role</th><th>Time</th><th>Primary</th>${TEAMS.map(t => `<th>${t.lead}</th>`).join("")}<th># Teams</th><th>Workstream</th><th>Active projects</th></tr>` +
+  names.map(n => {
+    const p = people[n], k = p.teams.length;
+    const roles = [...p.roles].filter(r => r !== "Ops" || p.roles.size === 1);
+    const mark = lead => !p.teams.includes(lead) ? ""
+      : PRIMARY[n] === lead ? `<span class="dot star">★</span>`
+      : PLANNED[n]?.to === lead ? `<span class="dot star" title="${planText(n)}">☆</span>`
+      : `<span class="dot${PRIMARY[n] ? " hollow" : ""}"></span>`;
+    return `<tr><td><b>${n}</b></td><td class="role">${roles.join(" / ")}</td><td class="role">${TIME[n] ?? "Full-time"}</td><td>${PRIMARY[n] ?? "—"}${PLANNED[n] ? `<div class="planned">${planText(n)}</div>` : ""}</td>${TEAMS.map(t =>
+      `<td style="--c:${t.color}">${mark(t.lead)}</td>`).join("")}<td><span class="${badgeClass(k)}">${k}</span></td><td class="role">${(WS_OF[n] ?? []).join(", ")}</td><td title="${projOf(n).map(p => p.name).join("\n")}">${projOf(n).length}</td></tr>`;
+  }).join("");
+</script>
+</body>
+</html>

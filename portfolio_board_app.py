@@ -41,6 +41,7 @@ ROLE_RANK = {"Lead": 0, "Collaborator": 1, "Support": 2, "Advisor": 3}
 EXCLUDE = {"complete", "sunsetted"}
 REPO_DEFAULT = "scale-nssa/project-database"
 DATA_PATH = "data/projects.json"
+TEAM_PATH = "data/team_structure.json"
 
 # ── Data I/O (GitHub-backed, with local fallback) ────────────────────────────
 def _repo():
@@ -70,6 +71,14 @@ def load_roster():
         return sorted([m["name"] for m in team if m.get("status") == "Active"])
     except Exception:
         return []
+
+@st.cache_data(ttl=300)
+def load_team_structure():
+    """Vertical teams, primaries and workstreams for the Team structure view."""
+    repo = _repo()
+    if repo:
+        return json.loads(repo.get_contents(TEAM_PATH).decoded_content)
+    return json.loads((Path(__file__).parent / TEAM_PATH).read_text(encoding="utf-8"))
 
 def apply_and_save(pid, mutate, summary, editor):
     """Fetch fresh, mutate the one project (or append when pid is None), commit."""
@@ -133,6 +142,36 @@ people = sorted({m["name"] for p in active for m in (dedupe_team((p.get("overvie
 roster_all = sorted(set(roster) | set(people))
 
 st.title("📋 SCALE Active Research Portfolio")
+view = st.radio("View", ["📋 Portfolio", "👥 Team structure"], horizontal=True, label_visibility="collapsed")
+
+# ── Team structure view ──────────────────────────────────────────────────────
+def render_team_structure():
+    import streamlit.components.v1 as components
+    data = dict(load_team_structure())
+    by_person = {}
+    for p in active:
+        ov = p.get("overview") or {}
+        stage = (p.get("process") or {}).get("stage")
+        for m in dedupe_team(ov.get("team")):
+            by_person.setdefault(m["name"], []).append({
+                "name": ov.get("name") or p["id"], "role": m["role"],
+                "bucket": bucket_of(p), "stage": STAGE_LABELS.get(stage, stage)})
+    data["projects"] = {n: sorted(v, key=lambda x: x["name"].lower()) for n, v in by_person.items()}
+    data["all_projects"] = sorted(
+        [{"name": (p.get("overview") or {}).get("name") or p["id"],
+          "team": dedupe_team((p.get("overview") or {}).get("team"))} for p in active],
+        key=lambda x: x["name"].lower())
+    data["bucket_colors"] = BUCKET_COLOR
+    html = (Path(__file__).parent / "team_chart.html").read_text(encoding="utf-8")
+    html = html.replace("__TEAM_DATA__", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
+    st.caption("Vertical teams, primaries and workstreams, linked to the active projects above. "
+               "Click a person to see their projects. Team structure lives in data/team_structure.json.")
+    components.html(html, height=1200, scrolling=True)
+
+if view == "👥 Team structure":
+    render_team_structure()
+    st.stop()
+
 c1, c2 = st.columns([3, 1])
 with c1:
     st.caption(f"{len(active)} active projects · {len(people)} people · grouped into 4 research buckets. "
