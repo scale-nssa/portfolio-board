@@ -174,7 +174,7 @@ if view == "👥 Team structure":
 
 # ── Prioritization rubric view ───────────────────────────────────────────────
 if view == "🧭 Prioritization rubric":
-    st.markdown((Path(__file__).parent / "research_rubric.md").read_text(encoding="utf-8"))
+    st.html((Path(__file__).parent / "research_rubric.html").read_text(encoding="utf-8"))
     st.stop()
 
 c1, c2 = st.columns([3, 1])
