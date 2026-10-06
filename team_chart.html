@@ -97,6 +97,11 @@
   .ws .proj .who { font-size: 11px; color: var(--muted); }
   .ws .proj .off { color: #b45309; font-weight: 600; }
 
+  .go { display: inline-block; font-size: 12px; font-weight: 600; color: #127FA1; text-decoration: none; cursor: pointer; margin-top: 4px; }
+  .go:hover { text-decoration: underline; }
+  .ws.focus { box-shadow: 0 0 0 3px var(--c); }
+  .ws .ws-projects .none { font-size: 11px; color: var(--muted); font-style: italic; }
+
   /* Person detail (click a person) */
   .detail { position: fixed; right: 16px; top: 16px; width: 340px; max-height: 70vh; overflow-y: auto; z-index: 10;
             background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 14px 16px; font-size: 13px; }
@@ -146,7 +151,8 @@ const ROLE_COLORS = { "Staff Researcher": "var(--staff)", "Staff Researcher + Op
 const D = __TEAM_DATA__;
 const { leaders: LEADERS, teams: TEAMS, primary: PRIMARY, planned: PLANNED, time: TIME, workstreams: WORKSTREAMS } = D;
 const PROJECTS = D.projects;   // name -> [{name, role, bucket, stage}] (active projects only)
-const ALL_PROJECTS = D.all_projects;   // [{name, team: [{name, role}]}]
+const ALL_PROJECTS = D.all_projects;   // [{name, workstream, team: [{name, role}]}]
+const FOCUS = D.focus ?? {};          // {ws, person} from the page URL
 const planText = n => { const p = PLANNED[n]; return p.tentative ? `may move to ${p.to}` : `moves to ${p.to} ${p.note}`; };
 const WS_OF = {};
 WORKSTREAMS.forEach(w => [w.lead, ...w.members].forEach(n => (WS_OF[n] ??= []).push(w.name)));
@@ -210,15 +216,17 @@ const renderWs = w => {
     : `<div class="check">✓ All members are on ${w.lead}'s team</div>`;
   // Portfolio projects whose name matches this workstream; flag chart people on them who aren't on the workstream
   const onWs = new Set([w.lead, ...w.members]);
-  const matched = ALL_PROJECTS.filter(p => (w.match ?? []).some(k => p.name.toLowerCase().includes(k.toLowerCase())));
-  const projList = matched.length ? `<div class="ws-projects"><div class="label">In the portfolio · ${matched.length} active</div>${matched.map(p =>
+  const matched = ALL_PROJECTS.filter(p => p.workstream === w.name);
+  const projList = matched.length ? `<div class="ws-projects"><div class="label">Tagged in the portfolio · ${matched.length} active</div>${matched.map(p =>
     `<div class="proj">${p.name}<div class="who">${p.team.map(m => {
       const off = people[m.name] && !onWs.has(m.name);
       const nm = m.role === "Lead" ? `<b>${m.name}</b>` : m.name;
       return off ? `<span class="off" title="Not on the ${w.name} workstream">${nm}*</span>` : nm;
     }).join(", ") || "<i>No one assigned</i>"}</div></div>`).join("")}${matched.some(p => p.team.some(m => people[m.name] && !onWs.has(m.name)))
-      ? `<div class="who" style="font-size:11px;color:#b45309">* on a project here but not on this workstream</div>` : ""}</div>` : "";
-  return `<div class="ws" style="--c:${w.color}"><div class="name">${w.name}</div><div class="meta">${w.members.length + 1} people${w.open.length ? ` · ${w.open.length} open` : ""}</div>
+      ? `<div class="who" style="font-size:11px;color:#b45309">* on a project here but not on this workstream</div>` : ""}</div>`
+    : `<div class="ws-projects"><div class="none">No portfolio projects tagged with this workstream yet.</div></div>`;
+  return `<div class="ws${FOCUS.ws === w.name ? " focus" : ""}" id="ws-${w.name}" style="--c:${w.color}"><div class="name">${w.name}</div><div class="meta">${w.members.length + 1} people${w.open.length ? ` · ${w.open.length} open` : ""}</div>
+    <a class="go" data-go="ws=${encodeURIComponent(w.name)}">View its projects in the portfolio →</a>
     <div class="members">${chips}</div>${check}${projList}</div>`;
 };
 document.getElementById("ws-frontier").innerHTML = WORKSTREAMS.filter(w => w.group === "frontier").map(renderWs).join("");
@@ -245,12 +253,30 @@ const showDetail = n => {
   const prim = PRIMARY[n] ? `Primary: ${PRIMARY[n]}${PLANNED[n] ? ` (${planText(n)})` : ""}` : "";
   detail.innerHTML = `<button class="close" aria-label="Close">✕</button><div class="name">${n}${TIME[n] ? `<span class="time">${TIME[n]}</span>` : ""}</div>
     <div class="meta">${[roles, prim, p ? `Teams: ${p.teams.join(", ")}` : "", WS_OF[n] ? `Workstreams: ${WS_OF[n].join(", ")}` : ""].filter(Boolean).join("<br>")}</div>
-    <div class="meta" style="margin-bottom:6px"><b>${projs.length} active project${projs.length === 1 ? "" : "s"}</b> in the portfolio</div>
+    <div class="meta" style="margin-bottom:6px"><b>${projs.length} active project${projs.length === 1 ? "" : "s"}</b> in the portfolio<br><a class="go" data-go="person=${encodeURIComponent(n)}">Highlight ${n} in the portfolio →</a></div>
     ${projs.map(x => `<div class="proj" style="--c:${BUCKET_COLOR[x.bucket] ?? "#94a3b8"}">${x.name}<div class="sm">${x.role || "Team"} · ${x.stage} · ${x.bucket}</div></div>`).join("") || `<div class="sm">None listed.</div>`}`;
   detail.hidden = false;
   detail.querySelector(".close").onclick = () => { detail.hidden = true; };
 };
 document.querySelectorAll(".person[data-p]").forEach(el => el.addEventListener("click", () => showDetail(el.dataset.p)));
+
+// Jump to the Portfolio tab. This chart sits in a sandboxed iframe, so the link is
+// created and clicked in the Streamlit page itself; it reloads with ?view=portfolio&…
+const goPortfolio = q => {
+  const url = `?view=portfolio&${q}`;
+  try {
+    const doc = window.parent.document, a = doc.createElement("a");
+    a.href = url; a.target = "_self"; doc.body.appendChild(a); a.click(); a.remove();
+  } catch (e) { window.open(url, "_blank"); }
+};
+document.addEventListener("click", e => {
+  const g = e.target.closest("[data-go]");
+  if (g) { e.preventDefault(); e.stopPropagation(); goPortfolio(g.dataset.go); }
+});
+
+// Arriving from a Portfolio link: open that person, or scroll to that workstream
+if (FOCUS.person && (people[FOCUS.person] || PROJECTS[FOCUS.person])) showDetail(FOCUS.person);
+if (FOCUS.ws) document.getElementById(`ws-${FOCUS.ws}`)?.scrollIntoView({ block: "center" });
 
 // Legend
 document.getElementById("legend").innerHTML =

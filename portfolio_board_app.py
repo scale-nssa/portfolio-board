@@ -13,6 +13,7 @@ and set Sharing → Public. Requires the same secrets as app.py: GITHUB_TOKEN, R
 """
 import json
 from pathlib import Path
+from urllib.parse import quote
 import streamlit as st
 
 st.set_page_config(page_title="SCALE Research Portfolio", page_icon="📋", layout="wide")
@@ -142,12 +143,26 @@ people = sorted({m["name"] for p in active for m in (dedupe_team((p.get("overvie
 roster_all = sorted(set(roster) | set(people))
 
 st.title("📋 SCALE Active Research Portfolio")
-view = st.radio("View", ["📋 Portfolio", "👥 Team structure", "🧭 Prioritization rubric"], horizontal=True, label_visibility="collapsed")
+# Views are linkable: ?view=portfolio|team|rubric, plus ?person=… or ?ws=… to focus on someone/a workstream
+VIEWS = {"portfolio": "📋 Portfolio", "team": "👥 Team structure", "rubric": "🧭 Prioritization rubric"}
+qp = st.query_params
+_slugs = list(VIEWS)
+view = st.radio("View", list(VIEWS.values()), horizontal=True, label_visibility="collapsed",
+                index=_slugs.index(qp.get("view")) if qp.get("view") in VIEWS else 0)
+view_slug = _slugs[list(VIEWS.values()).index(view)]
+if qp.get("view") != view_slug:   # switched tabs: drop the old focus, keep the URL shareable
+    qp.clear()
+    qp["view"] = view_slug
+focus_person, focus_ws = qp.get("person"), qp.get("ws")
+
+team_data = load_team_structure()
+WORKSTREAMS = [w["name"] for w in team_data.get("workstreams", [])]
+WS_COLOR = {w["name"]: w.get("color", "#94a3b8") for w in team_data.get("workstreams", [])}
 
 # ── Team structure view ──────────────────────────────────────────────────────
 def render_team_structure():
     import streamlit.components.v1 as components
-    data = dict(load_team_structure())
+    data = dict(team_data)
     by_person = {}
     for p in active:
         ov = p.get("overview") or {}
@@ -159,13 +174,16 @@ def render_team_structure():
     data["projects"] = {n: sorted(v, key=lambda x: x["name"].lower()) for n, v in by_person.items()}
     data["all_projects"] = sorted(
         [{"name": (p.get("overview") or {}).get("name") or p["id"],
+          "workstream": (p.get("overview") or {}).get("workstream"),
           "team": dedupe_team((p.get("overview") or {}).get("team"))} for p in active],
         key=lambda x: x["name"].lower())
     data["bucket_colors"] = BUCKET_COLOR
+    data["focus"] = {"person": focus_person, "ws": focus_ws}
     html = (Path(__file__).parent / "team_chart.html").read_text(encoding="utf-8")
     html = html.replace("__TEAM_DATA__", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
     st.caption("Vertical teams, primaries and workstreams, linked to the active projects above. "
-               "Click a person to see their projects. Team structure lives in data/team_structure.json.")
+               "Click a person to see their projects. Workstream projects come from each project's "
+               "Workstream tag (set it in the Portfolio view's edit panel).")
     components.html(html, height=1200, scrolling=True)
 
 if view == "👥 Team structure":
@@ -195,8 +213,13 @@ else:
     st.caption("🔒 **View only.** Editing is limited to: " + ", ".join(EDITORS)
                + ". Choose your name in **Editing as** (top right) to make changes.")
 
-person_filter = st.multiselect("Highlight people", people, placeholder="Show everyone",
+f1, f2 = st.columns([3, 2])
+person_filter = f1.multiselect("Highlight people", people, placeholder="Show everyone",
+                               default=[focus_person] if focus_person in people else [],
                                help="Dim projects that don't include the selected people.")
+ws_filter = f2.multiselect("Highlight workstreams", WORKSTREAMS, placeholder="All workstreams",
+                           default=[focus_ws] if focus_ws in WORKSTREAMS else [],
+                           help="Dim projects that aren't tagged with the selected workstreams.")
 
 # ── Collaboration view: who works together ───────────────────────────────────
 def _collab_index(active_list):
@@ -319,7 +342,9 @@ for col, bucket in zip(cols, BUCKETS):
             stage = (p.get("process") or {}).get("stage")
             team = dedupe_team(ov.get("team"))
             names = [m["name"] for m in team]
-            dim = bool(person_filter) and not any(n in person_filter for n in names)
+            ws = ov.get("workstream")
+            dim = ((bool(person_filter) and not any(n in person_filter for n in names))
+                   or (bool(ws_filter) and ws not in ws_filter))
             opacity = "0.35" if dim else "1"
 
             leads = ", ".join(f"<b>{m['name']}</b>" if m["role"] == "Lead" else m["name"] for m in team) or "<i>No one assigned</i>"
@@ -327,6 +352,10 @@ for col, bucket in zip(cols, BUCKETS):
                 f"<div style='opacity:{opacity};border:1px solid #ddd;border-left:3px solid {color};"
                 f"border-radius:10px;padding:9px 11px;margin-bottom:9px'>"
                 f"<div style='font-weight:600;font-size:0.95rem'>{name}</div>"
+                + (f"<a href='?view=team&ws={quote(ws)}' target='_self' title='See the {ws} workstream in Team structure' "
+                   f"style='display:inline-block;margin-top:3px;font-size:0.7rem;font-weight:600;color:#fff;"
+                   f"background:{WS_COLOR.get(ws, '#94a3b8')};border-radius:999px;padding:1px 8px;text-decoration:none'>"
+                   f"{ws} ↗</a>" if ws else "") +
                 f"<div style='font-family:monospace;font-size:0.72rem;color:{color};margin:3px 0 5px'>{STAGE_LABELS.get(stage, stage)}</div>"
                 f"<div style='font-size:0.82rem;color:#555'>{leads}</div></div>",
                 unsafe_allow_html=True)
@@ -339,6 +368,10 @@ for col, bucket in zip(cols, BUCKETS):
                     _si = STAGES.index(stage) if stage in STAGES else 0
                     new_stage = e2.selectbox("Stage", STAGES, index=_si,
                                              format_func=lambda s: STAGE_LABELS[s], key=f"stg_{pid}")
+                    _ws_opts = ["— none —"] + WORKSTREAMS
+                    new_ws = st.selectbox("Workstream", _ws_opts,
+                                          index=_ws_opts.index(ws) if ws in WORKSTREAMS else 0, key=f"ws_{pid}",
+                                          help="Links this project to a workstream on the Team structure tab.")
 
                     st.markdown("**Team**")
                     new_team = []
@@ -364,9 +397,11 @@ for col, bucket in zip(cols, BUCKETS):
                     b1, b2 = st.columns([1, 1])
                     if b1.button("💾 Save", type="primary", key=f"save_{pid}", use_container_width=True):
                         nn, nb, ns, nt = new_name.strip() or name, new_bucket, new_stage, new_team
+                        nw = new_ws if new_ws in WORKSTREAMS else None
                         def _mut(pr):
                             pr.setdefault("overview", {})
                             pr["overview"]["name"] = nn
+                            pr["overview"]["workstream"] = nw
                             pr["overview"]["research_bucket"] = nb
                             pr["overview"]["team"] = nt
                             pr.setdefault("process", {})["stage"] = ns
