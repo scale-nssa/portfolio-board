@@ -169,7 +169,7 @@ def render_team_structure():
         stage = (p.get("process") or {}).get("stage")
         for m in dedupe_team(ov.get("team")):
             by_person.setdefault(m["name"], []).append({
-                "name": ov.get("name") or p["id"], "role": m["role"],
+                "name": ov.get("name") or p["id"], "role": m["role"], "workstream": ov.get("workstream"),
                 "bucket": bucket_of(p), "stage": STAGE_LABELS.get(stage, stage)})
     data["projects"] = {n: sorted(v, key=lambda x: x["name"].lower()) for n, v in by_person.items()}
     data["all_projects"] = sorted(

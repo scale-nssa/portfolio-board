@@ -61,6 +61,15 @@
   .badge.heavy { background: #fee2e2; color: #991b1b; }
   body.hovering .person { opacity: .3; }
   body.hovering .person.hl { opacity: 1; background: #fff; box-shadow: 0 0 0 2px var(--rc); }
+  body.pinned .person { opacity: .25; }
+  body.pinned .person.pin { opacity: 1; background: #fff; box-shadow: 0 0 0 3px var(--rc); }
+  body.pinned .clickname.pin { color: #127FA1; text-decoration: underline; }
+  body.pinned #matrix tr.pin td { background: #E3F3F6; }
+  body.pinned .ws .proj { opacity: .35; }
+  body.pinned .ws .proj.pin { opacity: 1; background: #E3F3F6; border-radius: 4px; padding: 2px 4px; margin-left: -4px; }
+  #matrix tr.grp th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border-bottom: 0; padding-bottom: 0; }
+  #matrix tr.grp th.g { border-bottom: 2px solid var(--line); }
+  .wstag { display: inline-block; font-size: 10px; font-weight: 600; color: #fff; background: var(--wc); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
 
   /* Legend */
   .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--muted); margin-top: 16px; }
@@ -224,7 +233,7 @@ const renderWs = w => {
   const onWs = new Set([w.lead, ...w.members]);
   const matched = ALL_PROJECTS.filter(p => p.workstream === w.name);
   const projList = matched.length ? `<div class="ws-projects"><div class="label">Tagged in the portfolio · ${matched.length} active</div>${matched.map(p =>
-    `<div class="proj">${p.name}<div class="who">${p.team.map(m => {
+    `<div class="proj" data-team="${p.team.map(m => m.name).join("|")}">${p.name}<div class="who">${p.team.map(m => {
       const off = people[m.name] && !onWs.has(m.name);
       const nm = m.role === "Lead" ? `<b>${m.name}</b>` : m.name;
       return off ? `<span class="off" title="Not on the ${w.name} workstream">${nm}*</span>` : nm;
@@ -241,6 +250,7 @@ document.getElementById("ws-projects").innerHTML = WORKSTREAMS.filter(w => w.gro
 // Hover highlighting
 document.querySelectorAll(".person").forEach(el => {
   el.addEventListener("mouseenter", () => {
+    if (document.body.classList.contains("pinned")) return;
     document.body.classList.add("hovering");
     document.querySelectorAll(`.person[data-p="${el.dataset.p}"]`).forEach(x => x.classList.add("hl"));
   });
@@ -254,6 +264,20 @@ document.querySelectorAll(".person").forEach(el => {
 const BUCKET_COLOR = D.bucket_colors;
 const detail = document.getElementById("detail");
 const BUCKETS = Object.keys(BUCKET_COLOR);   // research buckets (overview.research_bucket), in board order
+const WS_COLOR = Object.fromEntries(WORKSTREAMS.map(w => [w.name, w.color]));
+
+// Pin a person: their chips, table row and workstream projects stay highlighted until you click elsewhere
+const unpin = () => {
+  document.body.classList.remove("pinned");
+  document.querySelectorAll(".pin").forEach(x => x.classList.remove("pin"));
+};
+const pin = n => {
+  unpin();
+  document.body.classList.remove("hovering");
+  document.body.classList.add("pinned");
+  document.querySelectorAll(`[data-p="${n}"]`).forEach(x => { x.classList.add("pin"); x.closest("#matrix tr")?.classList.add("pin"); });
+  document.querySelectorAll(".ws .proj[data-team]").forEach(x => { if (x.dataset.team.split("|").includes(n)) x.classList.add("pin"); });
+};
 const showDetail = (n, anchor) => {
   const p = people[n], projs = projOf(n);
   const roles = p ? [...p.roles].filter(r => r !== "Ops" || p.roles.size === 1).join(" / ") : (LEADERS.find(l => l.name === n)?.role ?? "Senior Researcher");
@@ -264,21 +288,27 @@ const showDetail = (n, anchor) => {
     ${BUCKETS.map(b => {
       const inB = projs.filter(x => x.bucket === b);
       return inB.length ? `<div class="bucket" style="--c:${BUCKET_COLOR[b]}"><span>${b}</span><span>${inB.length}</span></div>` +
-        inB.map(x => `<div class="proj" style="--c:${BUCKET_COLOR[b]}">${x.name}<div class="sm">${x.role || "Team"} · ${x.stage}</div></div>`).join("") : "";
+        inB.map(x => `<div class="proj" style="--c:${BUCKET_COLOR[b]}">${x.name}<div class="sm">${x.role || "Team"} · ${x.stage}${x.workstream ? `<span class="wstag" style="--wc:${WS_COLOR[x.workstream] ?? "#94a3b8"}">${x.workstream} workstream</span>` : ""}</div></div>`).join("") : "";
     }).join("") || `<div class="sm">None listed.</div>`}`;
   // Open beside whatever was clicked (the chart is a tall iframe, so a fixed panel could be off-screen)
   const top = anchor ? anchor.getBoundingClientRect().top + window.scrollY - 20 : window.scrollY + 16;
   detail.style.top = `${Math.max(16, top)}px`;
+  // Open on the side away from the click so the highlighted person stays visible
+  const onRight = anchor && anchor.getBoundingClientRect().left + anchor.offsetWidth / 2 > window.innerWidth / 2;
+  detail.style.left = onRight ? "16px" : "auto";
+  detail.style.right = onRight ? "auto" : "16px";
   detail.hidden = false;
   detail.scrollTop = 0;
   detail.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  detail.querySelector(".close").onclick = () => { detail.hidden = true; };
+  detail.querySelector(".close").onclick = () => { detail.hidden = true; unpin(); };
+  pin(n);
 };
 // Anything with data-p (person chips, lead names, table cells) opens that person's projects
 document.addEventListener("click", e => {
   if (e.target.closest("[data-go]") || e.target.closest(".detail")) return;
   const el = e.target.closest("[data-p]");
   if (el) showDetail(el.dataset.p, el);
+  else { detail.hidden = true; unpin(); }   // click anywhere else to clear
 });
 
 // Jump to the Portfolio tab. This chart sits in a sandboxed iframe, so the link is
@@ -307,7 +337,8 @@ document.getElementById("legend").innerHTML =
 // Matrix, sorted by number of teams (most shared first)
 const names = Object.keys(people).sort((a, b) => people[b].teams.length - people[a].teams.length || a.localeCompare(b));
 document.getElementById("matrix").innerHTML =
-  `<tr><th>Person</th><th>Role</th><th>Time</th><th>Primary</th>${TEAMS.map(t => `<th>${t.lead}</th>`).join("")}<th># Teams</th><th>Workstream</th>${BUCKETS.map(b => `<th class="bk" style="--c:${BUCKET_COLOR[b]}">${b}</th>`).join("")}<th>Total projects</th></tr>` +
+  `<tr class="grp"><th colspan="4"></th><th class="g" colspan="${TEAMS.length}">Vertical teams</th><th></th><th class="g">Workstream</th><th class="g" colspan="${BUCKETS.length + 1}">Active projects by research bucket</th></tr>` +
+  `<tr><th>Person</th><th>Role</th><th>Time</th><th>Primary</th>${TEAMS.map(t => `<th>${t.lead}</th>`).join("")}<th># Teams</th><th>Member of</th>${BUCKETS.map(b => `<th class="bk" style="--c:${BUCKET_COLOR[b]}">${b}</th>`).join("")}<th>Total projects</th></tr>` +
   names.map(n => {
     const p = people[n], k = p.teams.length;
     const roles = [...p.roles].filter(r => r !== "Ops" || p.roles.size === 1);
