@@ -142,7 +142,7 @@ people = sorted({m["name"] for p in active for m in (dedupe_team((p.get("overvie
 roster_all = sorted(set(roster) | set(people))
 
 st.title("📋 SCALE Active Research Portfolio")
-view = st.radio("View", ["📋 Portfolio", "👥 Team structure"], horizontal=True, label_visibility="collapsed")
+view = st.radio("View", ["📋 Portfolio", "👥 Team structure", "🧭 Prioritization rubric"], horizontal=True, label_visibility="collapsed")
 
 # ── Team structure view ──────────────────────────────────────────────────────
 def render_team_structure():
@@ -170,6 +170,11 @@ def render_team_structure():
 
 if view == "👥 Team structure":
     render_team_structure()
+    st.stop()
+
+# ── Prioritization rubric view ───────────────────────────────────────────────
+if view == "🧭 Prioritization rubric":
+    st.markdown((Path(__file__).parent / "research_rubric.md").read_text(encoding="utf-8"))
     st.stop()
 
 c1, c2 = st.columns([3, 1])
