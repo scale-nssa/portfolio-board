@@ -144,7 +144,7 @@ roster_all = sorted(set(roster) | set(people))
 
 st.title("📋 SCALE Active Research Portfolio")
 # Views are linkable: ?view=portfolio|team|rubric, plus ?person=… or ?ws=… to focus on someone/a workstream
-VIEWS = {"portfolio": "📋 Portfolio", "team": "👥 Team structure", "rubric": "🧭 Prioritization rubric"}
+VIEWS = {"team": "👥 Team structure", "portfolio": "📋 Portfolio", "rubric": "🧭 Prioritization rubric"}
 qp = st.query_params
 _slugs = list(VIEWS)
 view = st.radio("View", list(VIEWS.values()), horizontal=True, label_visibility="collapsed",
@@ -181,8 +181,8 @@ def render_team_structure():
     data["focus"] = {"person": focus_person, "ws": focus_ws}
     html = (Path(__file__).parent / "team_chart.html").read_text(encoding="utf-8")
     html = html.replace("__TEAM_DATA__", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
-    st.caption("Vertical teams, primaries and workstreams, linked to the active projects above. "
-               "Click a person to see their projects. Workstream projects come from each project's "
+    st.caption("Vertical teams, primaries and workstreams, linked to the active projects in the Portfolio tab. "
+               "Click a person to see their projects by research bucket. Workstream projects come from each project's "
                "Workstream tag (set it in the Portfolio view's edit panel).")
     components.html(html, height=1200, scrolling=True)
 
@@ -347,7 +347,11 @@ for col, bucket in zip(cols, BUCKETS):
                    or (bool(ws_filter) and ws not in ws_filter))
             opacity = "0.35" if dim else "1"
 
-            leads = ", ".join(f"<b>{m['name']}</b>" if m["role"] == "Lead" else m["name"] for m in team) or "<i>No one assigned</i>"
+            def _pl(m):   # each name links to the board with that person highlighted
+                nm = f"<b>{m['name']}</b>" if m["role"] == "Lead" else m["name"]
+                return (f"<a href='?view=portfolio&person={quote(m['name'])}' target='_self' "
+                        f"title='Highlight projects with {m['name']}' style='color:inherit;text-decoration:none'>{nm}</a>")
+            leads = ", ".join(_pl(m) for m in team) or "<i>No one assigned</i>"
             st.markdown(
                 f"<div style='opacity:{opacity};border:1px solid #ddd;border-left:3px solid {color};"
                 f"border-radius:10px;padding:9px 11px;margin-bottom:9px'>"

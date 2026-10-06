@@ -103,13 +103,19 @@
   .ws .ws-projects .none { font-size: 11px; color: var(--muted); font-style: italic; }
 
   /* Person detail (click a person) */
-  .detail { position: fixed; right: 16px; top: 16px; width: 340px; max-height: 70vh; overflow-y: auto; z-index: 10;
+  .detail { position: absolute; right: 16px; top: 16px; width: 360px; max-height: 520px; overflow-y: auto; z-index: 10;
             background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 14px 16px; font-size: 13px; }
   .detail .close { float: right; cursor: pointer; color: var(--muted); border: 0; background: none; font-size: 16px; }
   .detail .name { font-weight: 600; font-size: 15px; }
   .detail .meta { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
   .detail .proj { border-left: 3px solid var(--c); padding: 4px 8px; margin-bottom: 6px; background: #f8f9fb; border-radius: 4px; }
   .detail .proj .sm { font-size: 11px; color: var(--muted); }
+  .detail .bucket { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--c); margin: 10px 0 4px; display: flex; justify-content: space-between; }
+  [data-p] { cursor: pointer; }
+  .clickname:hover { text-decoration: underline; }
+  th.bk { color: var(--c); border-bottom: 3px solid var(--c); font-size: 12px; }
+  td.bk-n { font-weight: 600; color: var(--c); }
+  td.bk-n.zero { color: #cbd5e1; font-weight: 400; }
 
   @media print { body { background: #fff; padding: 12px; } .person { cursor: default; } }
 </style>
@@ -117,7 +123,7 @@
 <body>
 
 <h1>Research Team Structure</h1>
-<div class="sub">Vertical teams by senior researcher. Hover over a person to see every team they're on; click them to see their active projects from the portfolio. Badges show how many teams each person supports.</div>
+<div class="sub">Vertical teams by senior researcher. Hover over a person to see every team they're on; <b>click anyone</b> (including leads, and names in the table below) to see their active projects, grouped by research bucket. Badges show how many teams each person supports.</div>
 <div id="detail" class="detail" hidden></div>
 
 <div class="org">
@@ -140,7 +146,7 @@
 <h3 class="ws-group">Projects</h3>
 <div class="ws-grid" id="ws-projects"></div>
 
-<h2>Capacity matrix: who supports which team</h2>
+<h2>Capacity matrix: who supports which team, and their projects by research bucket</h2>
 <div style="overflow-x:auto"><table id="matrix"></table></div>
 <div class="note">★ = primary team · ☆ = planned or possible future primary · ○ = secondary team. Amber = on 2 teams · Red = on 3+ teams. Add % time per team to turn this into a real capacity view.</div>
 
@@ -182,7 +188,7 @@ const personChip = ([n, r], lead) => {
 const dirCard = l => {
   const t = TEAMS.find(t => t.top && t.lead === l.name);
   const reports = t ? `<div class="reports"><div class="reports-label">Manages</div>${t.members.map(m => personChip(m, t.lead)).join("")}</div>` : "";
-  return `<div class="dir-card"><div class="name">${l.name}</div><div class="role">${l.role}</div>${reports}</div>`;
+  return `<div class="dir-card"><div class="name clickname" data-p="${l.name}">${l.name}</div><div class="role">${l.role}</div>${reports}</div>`;
 };
 const hasTop = l => TEAMS.some(t => t.top && t.lead === l.name);
 document.getElementById("leaders").innerHTML = LEADERS.filter(l => !hasTop(l)).map(dirCard).join(`<div class="peer-link"></div>`);
@@ -193,7 +199,7 @@ const teamsEl = document.getElementById("teams");
 TEAMS.filter(t => !t.top).forEach(t => {
   const col = document.createElement("div");
   col.className = "team"; col.style.setProperty("--c", t.color);
-  col.innerHTML = `<div class="team-head"><div class="name">${t.lead}</div><div class="meta">${t.title} · ${t.members.length} ${t.members.length === 1 ? "person" : "people"}</div></div>
+  col.innerHTML = `<div class="team-head"><div class="name clickname" data-p="${t.lead}">${t.lead}</div><div class="meta">${t.title} · ${t.members.length} ${t.members.length === 1 ? "person" : "people"}</div></div>
     <div class="members">${t.members.map(m => personChip(m, t.lead)).join("")}</div>`;
   teamsEl.appendChild(col);
 });
@@ -247,18 +253,33 @@ document.querySelectorAll(".person").forEach(el => {
 // Click a person to see their active portfolio projects
 const BUCKET_COLOR = D.bucket_colors;
 const detail = document.getElementById("detail");
-const showDetail = n => {
+const BUCKETS = Object.keys(BUCKET_COLOR);   // research buckets (overview.research_bucket), in board order
+const showDetail = (n, anchor) => {
   const p = people[n], projs = projOf(n);
   const roles = p ? [...p.roles].filter(r => r !== "Ops" || p.roles.size === 1).join(" / ") : (LEADERS.find(l => l.name === n)?.role ?? "Senior Researcher");
   const prim = PRIMARY[n] ? `Primary: ${PRIMARY[n]}${PLANNED[n] ? ` (${planText(n)})` : ""}` : "";
   detail.innerHTML = `<button class="close" aria-label="Close">✕</button><div class="name">${n}${TIME[n] ? `<span class="time">${TIME[n]}</span>` : ""}</div>
     <div class="meta">${[roles, prim, p ? `Teams: ${p.teams.join(", ")}` : "", WS_OF[n] ? `Workstreams: ${WS_OF[n].join(", ")}` : ""].filter(Boolean).join("<br>")}</div>
     <div class="meta" style="margin-bottom:6px"><b>${projs.length} active project${projs.length === 1 ? "" : "s"}</b> in the portfolio<br><a class="go" data-go="person=${encodeURIComponent(n)}">Highlight ${n} in the portfolio →</a></div>
-    ${projs.map(x => `<div class="proj" style="--c:${BUCKET_COLOR[x.bucket] ?? "#94a3b8"}">${x.name}<div class="sm">${x.role || "Team"} · ${x.stage} · ${x.bucket}</div></div>`).join("") || `<div class="sm">None listed.</div>`}`;
+    ${BUCKETS.map(b => {
+      const inB = projs.filter(x => x.bucket === b);
+      return inB.length ? `<div class="bucket" style="--c:${BUCKET_COLOR[b]}"><span>${b}</span><span>${inB.length}</span></div>` +
+        inB.map(x => `<div class="proj" style="--c:${BUCKET_COLOR[b]}">${x.name}<div class="sm">${x.role || "Team"} · ${x.stage}</div></div>`).join("") : "";
+    }).join("") || `<div class="sm">None listed.</div>`}`;
+  // Open beside whatever was clicked (the chart is a tall iframe, so a fixed panel could be off-screen)
+  const top = anchor ? anchor.getBoundingClientRect().top + window.scrollY - 20 : window.scrollY + 16;
+  detail.style.top = `${Math.max(16, top)}px`;
   detail.hidden = false;
+  detail.scrollTop = 0;
+  detail.scrollIntoView({ block: "nearest", behavior: "smooth" });
   detail.querySelector(".close").onclick = () => { detail.hidden = true; };
 };
-document.querySelectorAll(".person[data-p]").forEach(el => el.addEventListener("click", () => showDetail(el.dataset.p)));
+// Anything with data-p (person chips, lead names, table cells) opens that person's projects
+document.addEventListener("click", e => {
+  if (e.target.closest("[data-go]") || e.target.closest(".detail")) return;
+  const el = e.target.closest("[data-p]");
+  if (el) showDetail(el.dataset.p, el);
+});
 
 // Jump to the Portfolio tab. This chart sits in a sandboxed iframe, so the link is
 // created and clicked in the Streamlit page itself; it reloads with ?view=portfolio&…
@@ -286,7 +307,7 @@ document.getElementById("legend").innerHTML =
 // Matrix, sorted by number of teams (most shared first)
 const names = Object.keys(people).sort((a, b) => people[b].teams.length - people[a].teams.length || a.localeCompare(b));
 document.getElementById("matrix").innerHTML =
-  `<tr><th>Person</th><th>Role</th><th>Time</th><th>Primary</th>${TEAMS.map(t => `<th>${t.lead}</th>`).join("")}<th># Teams</th><th>Workstream</th><th>Active projects</th></tr>` +
+  `<tr><th>Person</th><th>Role</th><th>Time</th><th>Primary</th>${TEAMS.map(t => `<th>${t.lead}</th>`).join("")}<th># Teams</th><th>Workstream</th>${BUCKETS.map(b => `<th class="bk" style="--c:${BUCKET_COLOR[b]}">${b}</th>`).join("")}<th>Total projects</th></tr>` +
   names.map(n => {
     const p = people[n], k = p.teams.length;
     const roles = [...p.roles].filter(r => r !== "Ops" || p.roles.size === 1);
@@ -294,8 +315,9 @@ document.getElementById("matrix").innerHTML =
       : PRIMARY[n] === lead ? `<span class="dot star">★</span>`
       : PLANNED[n]?.to === lead ? `<span class="dot star" title="${planText(n)}">☆</span>`
       : `<span class="dot${PRIMARY[n] ? " hollow" : ""}"></span>`;
-    return `<tr><td><b>${n}</b></td><td class="role">${roles.join(" / ")}</td><td class="role">${TIME[n] ?? "Full-time"}</td><td>${PRIMARY[n] ?? "—"}${PLANNED[n] ? `<div class="planned">${planText(n)}</div>` : ""}</td>${TEAMS.map(t =>
-      `<td style="--c:${t.color}">${mark(t.lead)}</td>`).join("")}<td><span class="${badgeClass(k)}">${k}</span></td><td class="role">${(WS_OF[n] ?? []).join(", ")}</td><td title="${projOf(n).map(p => p.name).join("\n")}">${projOf(n).length}</td></tr>`;
+    const byB = b => projOf(n).filter(x => x.bucket === b);
+    return `<tr><td class="clickname" data-p="${n}"><b>${n}</b></td><td class="role">${roles.join(" / ")}</td><td class="role">${TIME[n] ?? "Full-time"}</td><td>${PRIMARY[n] ?? "—"}${PLANNED[n] ? `<div class="planned">${planText(n)}</div>` : ""}</td>${TEAMS.map(t =>
+      `<td style="--c:${t.color}">${mark(t.lead)}</td>`).join("")}<td><span class="${badgeClass(k)}">${k}</span></td><td class="role">${(WS_OF[n] ?? []).join(", ")}</td>${BUCKETS.map(b => `<td class="bk-n${byB(b).length ? "" : " zero"}" style="--c:${BUCKET_COLOR[b]}" data-p="${n}" title="${byB(b).map(p => p.name).join("\n")}">${byB(b).length || "–"}</td>`).join("")}<td data-p="${n}" title="${projOf(n).map(p => p.name).join("\n")}"><b>${projOf(n).length}</b></td></tr>`;
   }).join("");
 </script>
 </body>
