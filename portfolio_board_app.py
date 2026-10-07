@@ -178,7 +178,27 @@ st.title("📋 SCALE Active Research Portfolio")
 VIEWS = {"team": "👥 Team structure", "portfolio": "📋 Portfolio", "rubric": "🧭 Prioritization rubric"}
 qp = st.query_params
 _slugs = list(VIEWS)
-view = st.radio("View", list(VIEWS.values()), horizontal=True, label_visibility="collapsed",
+# Style the view picker as large tabs that stay pinned at the top while scrolling
+st.markdown("""<style>
+.st-key-view_tabs { position: sticky; top: 3.75rem; z-index: 999; padding: 8px 0 10px;
+                    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+                    border-bottom: 1px solid rgba(127,127,127,.25); }
+.st-key-view_tabs div[role="radiogroup"] { gap: 10px; flex-wrap: wrap; }
+.st-key-view_tabs [data-testid="stRadioOption"] {
+    margin: 0 !important; padding: 10px 22px !important; border-radius: 10px; cursor: pointer;
+    border: 1.5px solid #c9cdea; background: #eef0fb;
+    transition: background .12s, border-color .12s; }
+/* hide the radio circle, keep the text */
+.st-key-view_tabs [data-testid="stRadioOption"] > div > div:not([data-testid="stMarkdownContainer"]) { display: none !important; }
+.st-key-view_tabs [data-testid="stRadioOption"] p { font-size: 1.05rem; font-weight: 600; margin: 0; color: #2b2f6b !important; }
+.st-key-view_tabs [data-testid="stRadioOption"]:hover { border-color: #5a5fc0; }
+.st-key-view_tabs [data-testid="stRadioOption"][data-selected="true"],
+.st-key-view_tabs [data-testid="stRadioOption"]:has(input:checked) {
+    background: #5a5fc0; border-color: #5a5fc0; box-shadow: 0 2px 8px rgba(90,95,192,.35); }
+.st-key-view_tabs [data-testid="stRadioOption"][data-selected="true"] p,
+.st-key-view_tabs [data-testid="stRadioOption"]:has(input:checked) p { color: #fff !important; }
+</style>""", unsafe_allow_html=True)
+view = st.radio("View", list(VIEWS.values()), horizontal=True, label_visibility="collapsed", key="view_tabs",
                 index=_slugs.index(qp.get("view")) if qp.get("view") in VIEWS else 0)
 view_slug = _slugs[list(VIEWS.values()).index(view)]
 if qp.get("view") != view_slug:   # switched tabs: drop the old focus, keep the URL shareable
