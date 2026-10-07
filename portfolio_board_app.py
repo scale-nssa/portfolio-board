@@ -216,10 +216,10 @@ else:
 f1, f2 = st.columns([3, 2])
 person_filter = f1.multiselect("Highlight people", people, placeholder="Show everyone",
                                default=[focus_person] if focus_person in people else [],
-                               help="Dim projects that don't include the selected people.")
+                               help="Move projects with the selected people to the top and dim the rest.")
 ws_filter = f2.multiselect("Highlight workstreams", WORKSTREAMS, placeholder="All workstreams",
                            default=[focus_ws] if focus_ws in WORKSTREAMS else [],
-                           help="Dim projects that aren't tagged with the selected workstreams.")
+                           help="Move projects tagged with the selected workstreams to the top and dim the rest.")
 
 # ── Collaboration view: who works together ───────────────────────────────────
 def _collab_index(active_list):
@@ -324,16 +324,27 @@ if edit_mode:
                 st.rerun()
 
 # ── Board ────────────────────────────────────────────────────────────────────
+def is_dimmed(p):
+    """True when a highlight filter is on and this project doesn't match it."""
+    ov = p.get("overview") or {}
+    names = [m["name"] for m in dedupe_team(ov.get("team"))]
+    return ((bool(person_filter) and not any(n in person_filter for n in names))
+            or (bool(ws_filter) and ov.get("workstream") not in ws_filter))
+
+filtering = bool(person_filter or ws_filter)
 cols = st.columns(4)
 for col, bucket in zip(cols, BUCKETS):
+    # Highlighted projects first, then the rest; alphabetical within each group
     items = sorted([p for p in active if bucket_of(p) == bucket],
-                   key=lambda p: ((p.get("overview") or {}).get("name") or p["id"]).lower())
+                   key=lambda p: (is_dimmed(p), ((p.get("overview") or {}).get("name") or p["id"]).lower()))
+    n_match = sum(not is_dimmed(p) for p in items)
     color = BUCKET_COLOR[bucket]
     with col:
+        count = f"{n_match} of {len(items)}" if filtering else f"{len(items)}"
         st.markdown(
             f"<div style='border-bottom:3px solid {color};padding-bottom:6px;margin-bottom:10px'>"
             f"<span style='font-weight:700'>{bucket}</span> "
-            f"<span style='color:{color};font-family:monospace;float:right'>{len(items)}</span></div>",
+            f"<span style='color:{color};font-family:monospace;float:right'>{count}</span></div>",
             unsafe_allow_html=True)
         for p in items:
             ov = p.get("overview") or {}
@@ -343,8 +354,7 @@ for col, bucket in zip(cols, BUCKETS):
             team = dedupe_team(ov.get("team"))
             names = [m["name"] for m in team]
             ws = ov.get("workstream")
-            dim = ((bool(person_filter) and not any(n in person_filter for n in names))
-                   or (bool(ws_filter) and ws not in ws_filter))
+            dim = is_dimmed(p)
             opacity = "0.35" if dim else "1"
 
             def _pl(m):   # each name links to the board with that person highlighted
