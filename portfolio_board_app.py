@@ -61,17 +61,21 @@ def load_projects():
     return json.loads((Path(__file__).parent / DATA_PATH).read_text(encoding="utf-8"))
 
 @st.cache_data(ttl=300)
-def load_roster():
-    """Active team-member names for the add-person picker."""
+def load_statuses():
+    """name -> roster status ("Active", "Collaborator", "Inactive", …) from team_members.json."""
     try:
         repo = _repo()
         if repo:
             team = json.loads(repo.get_contents("data/team_members.json").decoded_content)
         else:
             team = json.loads((Path(__file__).parent / "data/team_members.json").read_text(encoding="utf-8"))
-        return sorted([m["name"] for m in team if m.get("status") == "Active"])
+        return {m["name"]: m.get("status") for m in team if m.get("name")}
     except Exception:
-        return []
+        return {}
+
+def load_roster():
+    """Active team members and collaborators, for the add-person picker."""
+    return sorted(n for n, s in load_statuses().items() if s in SHOWN_STATUSES)
 
 @st.cache_data(ttl=300)
 def load_team_structure():
@@ -124,6 +128,30 @@ def dedupe_team(team):
     return [{"name": n, "role": r} for n, r in
             sorted(seen.items(), key=lambda kv: (ROLE_RANK.get(kv[1], 9), kv[0]))]
 
+# Who appears on the board: Active members and Collaborators (anyone on the team chart counts as Active).
+# Inactive people and names missing from the roster are hidden from displays but kept in the data.
+SHOWN_STATUSES = ("Active", "Collaborator")
+
+def _chart_names():
+    try:
+        ts = load_team_structure()
+    except Exception:
+        return set()
+    return ({l["name"] for l in ts.get("leaders", [])} | {t["lead"] for t in ts.get("teams", [])}
+            | {n for t in ts.get("teams", []) for n, _ in t.get("members", [])})
+
+def status_of(name):
+    return "Active" if name in CHART_NAMES else STATUSES.get(name)
+
+def is_shown(name):
+    return status_of(name) in SHOWN_STATUSES
+
+def is_collaborator(name):
+    return status_of(name) == "Collaborator"
+
+def visible_team(team):
+    return [m for m in team if is_shown(m["name"])]
+
 def bucket_of(p):
     b = (p.get("overview") or {}).get("research_bucket")
     return b if b in BUCKETS else "Implementation & Other"
@@ -137,9 +165,12 @@ if "editor" not in st.session_state:
 
 # ── Header ───────────────────────────────────────────────────────────────────
 projects = load_projects()
+STATUSES = load_statuses()
+CHART_NAMES = _chart_names()
 roster = load_roster()
 active = active_projects(projects)
-people = sorted({m["name"] for p in active for m in (dedupe_team((p.get("overview") or {}).get("team")))})
+people = sorted({m["name"] for p in active for m in visible_team(dedupe_team((p.get("overview") or {}).get("team")))})
+team_people = [n for n in people if not is_collaborator(n)]   # collaborators stay off the "working together" map
 roster_all = sorted(set(roster) | set(people))
 
 st.title("📋 SCALE Active Research Portfolio")
@@ -167,7 +198,7 @@ def render_team_structure():
     for p in active:
         ov = p.get("overview") or {}
         stage = (p.get("process") or {}).get("stage")
-        for m in dedupe_team(ov.get("team")):
+        for m in visible_team(dedupe_team(ov.get("team"))):
             by_person.setdefault(m["name"], []).append({
                 "name": ov.get("name") or p["id"], "role": m["role"], "workstream": ov.get("workstream"),
                 "bucket": bucket_of(p), "stage": STAGE_LABELS.get(stage, stage)})
@@ -175,7 +206,7 @@ def render_team_structure():
     data["all_projects"] = sorted(
         [{"name": (p.get("overview") or {}).get("name") or p["id"],
           "workstream": (p.get("overview") or {}).get("workstream"),
-          "team": dedupe_team((p.get("overview") or {}).get("team"))} for p in active],
+          "team": visible_team(dedupe_team((p.get("overview") or {}).get("team")))} for p in active],
         key=lambda x: x["name"].lower())
     data["bucket_colors"] = BUCKET_COLOR
     data["focus"] = {"person": focus_person, "ws": focus_ws}
@@ -227,7 +258,7 @@ def _collab_index(active_list):
     pair = defaultdict(list)      # frozenset({a,b}) -> [project names]
     for p in active_list:
         team = dedupe_team((p.get("overview") or {}).get("team"))
-        names = sorted({m["name"] for m in team})
+        names = sorted({m["name"] for m in team if m["name"] in team_people})
         pname = (p.get("overview") or {}).get("name") or p["id"]
         for i in range(len(names)):
             for j in range(i + 1, len(names)):
@@ -243,7 +274,7 @@ with st.expander("🤝 Who's working together", expanded=False):
         st.caption("No shared-project collaborations found.")
     else:
         f1, f2 = st.columns([2, 2])
-        focus = f1.selectbox("Focus on a person", ["— everyone —"] + people,
+        focus = f1.selectbox("Focus on a person", ["— everyone —"] + team_people,
                              help="Show only this person and their collaborators.")
         focus = None if focus.startswith("—") else focus
         max_w = max(len(v) for v in pair.values())
@@ -327,7 +358,7 @@ if edit_mode:
 def is_dimmed(p):
     """True when a highlight filter is on and this project doesn't match it."""
     ov = p.get("overview") or {}
-    names = [m["name"] for m in dedupe_team(ov.get("team"))]
+    names = [m["name"] for m in visible_team(dedupe_team(ov.get("team")))]
     return ((bool(person_filter) and not any(n in person_filter for n in names))
             or (bool(ws_filter) and ov.get("workstream") not in ws_filter))
 
@@ -351,7 +382,8 @@ for col, bucket in zip(cols, BUCKETS):
             pid = p["id"]
             name = ov.get("name") or pid
             stage = (p.get("process") or {}).get("stage")
-            team = dedupe_team(ov.get("team"))
+            team = dedupe_team(ov.get("team"))           # full team, used by the edit panel
+            shown_team = visible_team(team)              # hides inactive / unknown people on the card
             names = [m["name"] for m in team]
             ws = ov.get("workstream")
             dim = is_dimmed(p)
@@ -361,7 +393,7 @@ for col, bucket in zip(cols, BUCKETS):
                 nm = f"<b>{m['name']}</b>" if m["role"] == "Lead" else m["name"]
                 return (f"<a href='?view=portfolio&person={quote(m['name'])}' target='_self' "
                         f"title='Highlight projects with {m['name']}' style='color:inherit;text-decoration:none'>{nm}</a>")
-            leads = ", ".join(_pl(m) for m in team) or "<i>No one assigned</i>"
+            leads = ", ".join(_pl(m) for m in shown_team) or "<i>No one assigned</i>"
             st.markdown(
                 f"<div style='opacity:{opacity};border:1px solid #ddd;border-left:3px solid {color};"
                 f"border-radius:10px;padding:9px 11px;margin-bottom:9px'>"
@@ -391,7 +423,8 @@ for col, bucket in zip(cols, BUCKETS):
                     new_team = []
                     for i, m in enumerate(team):
                         t1, t2, t3 = st.columns([3, 3, 1])
-                        t1.markdown(f"<div style='padding-top:6px'>{m['name']}</div>", unsafe_allow_html=True)
+                        _tag = "" if is_shown(m["name"]) else " <span style='color:#9aa6b8;font-size:0.8em'>(inactive)</span>"
+                        t1.markdown(f"<div style='padding-top:6px'>{m['name']}{_tag}</div>", unsafe_allow_html=True)
                         role = t2.selectbox("role", TEAM_ROLES,
                                             index=TEAM_ROLES.index(m["role"]) if m["role"] in TEAM_ROLES else 1,
                                             key=f"rl_{pid}_{i}", label_visibility="collapsed")
