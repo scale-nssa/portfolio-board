@@ -212,7 +212,6 @@ WS_COLOR = {w["name"]: w.get("color", "#94a3b8") for w in team_data.get("workstr
 
 # ── Team structure view ──────────────────────────────────────────────────────
 def render_team_structure():
-    import streamlit.components.v1 as components
     data = dict(team_data)
     by_person = {}
     for p in active:
@@ -235,7 +234,11 @@ def render_team_structure():
     st.caption("Vertical teams, primaries and workstreams, linked to the active projects in the Portfolio tab. "
                "Click a person to see their projects by research bucket. Workstream projects come from each project's "
                "Workstream tag (set it in the Portfolio view's edit panel).")
-    components.html(html, height=1200, scrolling=True)
+    if hasattr(st, "iframe"):   # st.components.v1.html is deprecated in favor of st.iframe
+        st.iframe(html, height=1200)
+    else:
+        import streamlit.components.v1 as components
+        components.html(html, height=1200, scrolling=True)
 
 if view == "👥 Team structure":
     render_team_structure()
