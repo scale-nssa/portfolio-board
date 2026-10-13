@@ -165,6 +165,11 @@ const ROLE_COLORS = { "Staff Researcher": "var(--staff)", "Staff Researcher + Op
 // Data injected by portfolio_board_app.py from data/team_structure.json and data/projects.json
 const D = __TEAM_DATA__;
 const { leaders: LEADERS, teams: TEAMS, primary: PRIMARY, planned: PLANNED, time: TIME, workstreams: WORKSTREAMS } = D;
+// Part-time on specific teams/workstreams only (keys: a team lead's name or a workstream name)
+const PART_ON = D.part_time_on ?? {};
+const timeAt = (n, where) => TIME[n] ?? ((PART_ON[n] ?? []).includes(where) ? "Part-time" : "");
+const timeSummary = n => TIME[n] ?? (PART_ON[n]?.length
+  ? `Part-time on ${PART_ON[n].map(x => TEAMS.some(t => t.lead === x) ? `${x}'s team` : x).join(", ")}` : "");
 const PROJECTS = D.projects;   // name -> [{name, role, bucket, stage}] (active projects only)
 const ALL_PROJECTS = D.all_projects;   // [{name, workstream, team: [{name, role}]}]
 const FOCUS = D.focus ?? {};          // {ws, person} from the page URL
@@ -189,7 +194,8 @@ const personChip = ([n, r], lead) => {
   const tag = PRIMARY[n] === lead ? `<span class="primary">★ Primary${plan ? " (current)" : ""}</span>${plan ? `<div class="planned">→ ${planText(n)}</div>` : ""}`
             : plan?.to === lead ? `<span class="planned">☆ ${plan.tentative ? "Possible future primary" : `Future primary (${plan.note})`}</span>`
             : PRIMARY[n] ? `<span class="secondary">Primary: ${PRIMARY[n]}${plan ? ` → ${plan.to}${plan.tentative ? "?" : ""}` : ""}</span>` : "";
-  return `<div class="person${TIME[n] ? " pt" : ""}" data-p="${n}" style="--rc:${ROLE_COLORS[r]}"><div><div>${n}${TIME[n] ? `<span class="time">${TIME[n]}</span>` : ""}</div><div class="r">${r}${projCount(n)}</div>${tag ? `<div>${tag}</div>` : ""}</div><span class="${badgeClass(k)}">${k} team${k > 1 ? "s" : ""}</span></div>`;
+  const tm = timeAt(n, lead);
+  return `<div class="person${tm ? " pt" : ""}" data-p="${n}" style="--rc:${ROLE_COLORS[r]}"><div><div>${n}${tm ? `<span class="time">${tm}</span>` : ""}</div><div class="r">${r}${projCount(n)}</div>${tag ? `<div>${tag}</div>` : ""}</div><span class="${badgeClass(k)}">${k} team${k > 1 ? "s" : ""}</span></div>`;
 };
 
 // Leadership: directors with a "top" team (Monica, ops) sit in a side column beside the
@@ -224,7 +230,8 @@ const renderWs = w => {
     if (n === w.lead) return `<div class="person lead-chip" data-p="${n}" style="--rc:${w.color}"><div><div>${n}</div><div class="r">${leadTitle(n)}</div></div><span class="badge lead-badge">Lead</span></div>`;
     if (isLead(n)) return `<div class="person" data-p="${n}" style="--rc:#94a3b8"><div><div>${n}</div><div class="r">${leadTitle(n)}</div></div></div>`;
     const [, r] = team.members.find(([m]) => m === n) ?? [n, [...people[n].roles][0]];
-    return `<div class="person${TIME[n] ? " pt" : ""}" data-p="${n}" style="--rc:${ROLE_COLORS[r]}"><div><div>${n}${TIME[n] ? `<span class="time">${TIME[n]}</span>` : ""}</div><div class="r">${r} · primary ${PRIMARY[n]}${PLANNED[n] ? ` → ${PLANNED[n].to}${PLANNED[n].tentative ? "?" : ""}` : ""}</div></div></div>`;
+    const tm = timeAt(n, w.name);
+    return `<div class="person${tm ? " pt" : ""}" data-p="${n}" style="--rc:${ROLE_COLORS[r]}"><div><div>${n}${tm ? `<span class="time">${tm}</span>` : ""}</div><div class="r">${r} · primary ${PRIMARY[n]}${PLANNED[n] ? ` → ${PLANNED[n].to}${PLANNED[n].tentative ? "?" : ""}` : ""}</div></div></div>`;
   }).join("") + w.open.map(r => `<div class="open-slot" style="border-left:3px solid ${ROLE_COLORS[r]}">Open slot · ${r}</div>`).join("");
   const check = offTeam.length
     ? `<div class="check warn">⚠ ${offTeam.join(", ")} not on ${w.lead}'s team</div>`
@@ -282,7 +289,7 @@ const showDetail = (n, anchor) => {
   const p = people[n], projs = projOf(n);
   const roles = p ? [...p.roles].filter(r => r !== "Ops" || p.roles.size === 1).join(" / ") : (LEADERS.find(l => l.name === n)?.role ?? "Senior Researcher");
   const prim = PRIMARY[n] ? `Primary: ${PRIMARY[n]}${PLANNED[n] ? ` (${planText(n)})` : ""}` : "";
-  detail.innerHTML = `<button class="close" aria-label="Close">✕</button><div class="name">${n}${TIME[n] ? `<span class="time">${TIME[n]}</span>` : ""}</div>
+  detail.innerHTML = `<button class="close" aria-label="Close">✕</button><div class="name">${n}${timeSummary(n) ? `<span class="time">${timeSummary(n)}</span>` : ""}</div>
     <div class="meta">${[roles, prim, p ? `Teams: ${p.teams.join(", ")}` : "", WS_OF[n] ? `Workstreams: ${WS_OF[n].join(", ")}` : ""].filter(Boolean).join("<br>")}</div>
     <div class="meta" style="margin-bottom:6px"><b>${projs.length} active project${projs.length === 1 ? "" : "s"}</b> in the portfolio<br><a class="go" data-go="person=${encodeURIComponent(n)}">Highlight ${n} in the portfolio →</a></div>
     ${BUCKETS.map(b => {
@@ -347,7 +354,7 @@ document.getElementById("matrix").innerHTML =
       : PLANNED[n]?.to === lead ? `<span class="dot star" title="${planText(n)}">☆</span>`
       : `<span class="dot${PRIMARY[n] ? " hollow" : ""}"></span>`;
     const byB = b => projOf(n).filter(x => x.bucket === b);
-    return `<tr><td class="clickname" data-p="${n}"><b>${n}</b></td><td class="role">${roles.join(" / ")}</td><td class="role">${TIME[n] ?? "Full-time"}</td><td>${PRIMARY[n] ?? "—"}${PLANNED[n] ? `<div class="planned">${planText(n)}</div>` : ""}</td>${TEAMS.map(t =>
+    return `<tr><td class="clickname" data-p="${n}"><b>${n}</b></td><td class="role">${roles.join(" / ")}</td><td class="role">${timeSummary(n) || "Full-time"}</td><td>${PRIMARY[n] ?? "—"}${PLANNED[n] ? `<div class="planned">${planText(n)}</div>` : ""}</td>${TEAMS.map(t =>
       `<td style="--c:${t.color}">${mark(t.lead)}</td>`).join("")}<td><span class="${badgeClass(k)}">${k}</span></td><td class="role">${(WS_OF[n] ?? []).join(", ")}</td>${BUCKETS.map(b => `<td class="bk-n${byB(b).length ? "" : " zero"}" style="--c:${BUCKET_COLOR[b]}" data-p="${n}" title="${byB(b).map(p => p.name).join("\n")}">${byB(b).length || "–"}</td>`).join("")}<td data-p="${n}" title="${projOf(n).map(p => p.name).join("\n")}"><b>${projOf(n).length}</b></td></tr>`;
   }).join("");
 </script>
