@@ -134,8 +134,6 @@
   .jump a { cursor: pointer; font-weight: 600; color: #127FA1; background: #fff; border: 1px solid var(--line);
             border-radius: 999px; padding: 3px 10px; text-decoration: none; }
   .jump a:hover { border-color: #127FA1; }
-  .jump a.tab { margin-left: auto; }
-  section[hidden] { display: none; }
 
   /* Part-time group */
   .pt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
@@ -152,12 +150,11 @@
 
 <div id="detail" class="detail" hidden></div>
 
-<section data-mode="team">
 <nav class="jump">On this page:
   <a data-jump="sec-teams">Research Teams</a>
   <a data-jump="sec-pt">Part-Time ↓</a>
+  <a data-jump="sec-ws">Workstreams ↓</a>
   <a data-jump="sec-matrix">Capacity matrix ↓</a>
-  <a data-view="workstreams" class="tab">Workstreams tab →</a>
 </nav>
 
 <h1 id="sec-teams">Research Teams</h1>
@@ -175,28 +172,23 @@ Hover over a person to see every team they're on. <b>Click anyone</b> (including
   <div class="org-side" id="side"></div>
 </div>
 
-<div class="legend"></div>
+<div class="legend" id="legend"></div>
 
 <h2 id="sec-pt">Part-Time</h2>
 <div class="sub" style="margin-bottom:12px">Students and part-time staff, kept out of the team columns above so those show full-time capacity. Each card lists the teams the person is on.</div>
 <div class="pt-grid" id="pt"></div>
 
-<h2 id="sec-matrix">Capacity matrix: who supports which team, and their projects by research bucket</h2>
-<div style="overflow-x:auto"><table id="matrix"></table></div>
-<div class="note">Click a column header to sort (click again to reverse). ★ = primary team · ☆ = planned or possible future primary · ○ = secondary team. Amber = on 2 teams · Red = on 3+ teams. Add % time per team to turn this into a real capacity view.</div>
-</section>
-
-<section data-mode="workstreams">
-<nav class="jump"><a data-view="team" class="tab">← Research Teams tab</a></nav>
-<h1>Workstreams</h1>
-<div class="sub">Workstreams are the largest commitments we plan staffing around. They cross areas and teams and don’t cover all our work.<br>
-Everyone on a workstream should also be on the lead's research team. <b>Click anyone</b> to see their active projects.</div>
+<h2 id="sec-ws">Workstreams</h2>
+<div class="sub" style="margin-bottom:12px">Workstreams are the largest commitments we plan staffing around. They cross areas and teams and don’t cover all our work.<br>
+Everyone on a workstream should also be on the lead's research team.</div>
 <h3 class="ws-group">US frontier models</h3>
 <div class="ws-grid" id="ws-frontier"></div>
 <h3 class="ws-group">Projects</h3>
 <div class="ws-grid" id="ws-projects"></div>
-<div class="legend"></div>
-</section>
+
+<h2 id="sec-matrix">Capacity matrix: who supports which team, and their projects by research bucket</h2>
+<div style="overflow-x:auto"><table id="matrix"></table></div>
+<div class="note">Click a column header to sort (click again to reverse). ★ = primary team · ☆ = planned or possible future primary · ○ = secondary team. Amber = on 2 teams · Red = on 3+ teams. Add % time per team to turn this into a real capacity view.</div>
 
 <script>
 const ROLE_COLORS = { "Staff Researcher": "var(--staff)", "Staff Researcher + Ops": "var(--staff)", "Postdoc": "var(--postdoc)", "Data Scientist": "var(--rda)", "RA": "var(--ra)", "Graduate RA": "var(--ra)", "Researcher": "var(--researcher)", "Ops": "var(--staff)" };
@@ -226,10 +218,6 @@ const badgeClass = n => n >= 3 ? "badge heavy" : n === 2 ? "badge multi" : "badg
 
 const projOf = n => PROJECTS[n] ?? [];
 const projCount = n => { const c = projOf(n).length; return ` · ${c} project${c === 1 ? "" : "s"}`; };
-
-// Which tab this is: "team" (Research Teams) or "workstreams"; the other tab's section stays hidden
-const MODE = D.mode ?? "team";
-document.querySelectorAll("section[data-mode]").forEach(s => s.hidden = s.dataset.mode !== MODE);
 
 // Part-time everywhere (students and part-time staff) go in the Part-Time group, not the team columns
 const isPT = n => !!TIME[n];
@@ -382,8 +370,6 @@ const goView = (view, q) => {
 document.addEventListener("click", e => {
   const g = e.target.closest("[data-go]");
   if (g) { e.preventDefault(); e.stopPropagation(); goView("portfolio", g.dataset.go); }
-  const v = e.target.closest("[data-view]");
-  if (v) { e.preventDefault(); goView(v.dataset.view); }
   const j = e.target.closest("[data-jump]");
   // Scroll only this frame (scrollIntoView would also scroll the Streamlit page and hide the nav)
   const target = j && document.getElementById(j.dataset.jump);
@@ -392,12 +378,12 @@ document.addEventListener("click", e => {
 
 // Arriving from a Portfolio link: open that person, or scroll to that workstream
 if (FOCUS.person && (people[FOCUS.person] || PROJECTS[FOCUS.person])) showDetail(FOCUS.person);
-if (FOCUS.ws && MODE === "workstreams") document.getElementById(`ws-${FOCUS.ws}`)?.scrollIntoView({ block: "center" });
+if (FOCUS.ws) document.getElementById(`ws-${FOCUS.ws}`)?.scrollIntoView({ block: "center" });
 
-// Legend (one per tab)
-document.querySelectorAll(".legend").forEach(el => el.innerHTML =
+// Legend
+document.getElementById("legend").innerHTML =
   [["Staff Researcher","var(--staff)"],["Researcher","var(--researcher)"],["Postdoc","var(--postdoc)"],["Data Scientist","var(--rda)"],["RA / Graduate RA","var(--ra)"]]
-  .map(([l, c]) => `<span style="--rc:${c}">${l}</span>`).join("") + `<span class="pt-key">Dotted box = part-time</span>`);
+  .map(([l, c]) => `<span style="--rc:${c}">${l}</span>`).join("") + `<span class="pt-key">Dotted box = part-time</span>`;
 
 // Matrix, sortable by any column header (default: number of teams, most shared first)
 const rolesOf = n => [...people[n].roles].filter(r => r !== "Ops" || people[n].roles.size === 1);
