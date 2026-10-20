@@ -182,9 +182,21 @@ if qp.get("view") == "workstreams":   # workstreams briefly had their own tab; t
 _slugs = list(VIEWS)
 # Style the view picker as large tabs that stay pinned at the top while scrolling
 st.markdown("""<style>
-.st-key-view_tabs { position: sticky; top: 3.75rem; z-index: 999; padding: 8px 0 10px;
-                    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-                    border-bottom: 1px solid rgba(127,127,127,.25); }
+/* Sticky goes on the container's layout wrapper when Streamlit adds one (sticky needs a tall parent) */
+[data-testid="stLayoutWrapper"]:has(> .st-key-sticky_head) { position: sticky; top: 3.75rem; z-index: 999; }
+.st-key-sticky_head { position: sticky; top: 3.75rem; z-index: 999; padding: 8px 0 10px; gap: 8px;
+                      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+                      border-bottom: 1px solid rgba(127,127,127,.25); }
+/* "On this page" jump links (Portfolio tab) */
+.pf-jump { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 0.8rem; opacity: .9; }
+.pf-jump a { font-weight: 600; text-decoration: none; border: 1px solid rgba(127,127,127,.35);
+             border-radius: 999px; padding: 2px 10px; }
+.pf-jump a:hover { border-color: #5a5fc0; }
+.pf-anchor { scroll-margin-top: 13rem; }
+/* Definition callout */
+.pf-def { background: rgba(90,95,192,.12); border: 1px solid rgba(90,95,192,.35); border-left: 5px solid #5a5fc0;
+          border-radius: 8px; padding: 10px 16px; margin: 4px 0 14px; max-width: 900px; }
+.pf-def .lbl { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #7b80d6; }
 .st-key-view_tabs div[role="radiogroup"] { gap: 10px; flex-wrap: wrap; }
 .st-key-view_tabs [data-testid="stRadioOption"] {
     margin: 0 !important; padding: 10px 22px !important; border-radius: 10px; cursor: pointer;
@@ -200,9 +212,15 @@ st.markdown("""<style>
 .st-key-view_tabs [data-testid="stRadioOption"][data-selected="true"] p,
 .st-key-view_tabs [data-testid="stRadioOption"]:has(input:checked) p { color: #fff !important; }
 </style>""", unsafe_allow_html=True)
-view = st.radio("View", list(VIEWS.values()), horizontal=True, label_visibility="collapsed", key="view_tabs",
-                index=_slugs.index(qp.get("view")) if qp.get("view") in VIEWS else 0)
-view_slug = _slugs[list(VIEWS.values()).index(view)]
+# The tabs (and the Portfolio tab's jump links) sit in one container that stays pinned at the top
+with st.container(key="sticky_head"):
+    view = st.radio("View", list(VIEWS.values()), horizontal=True, label_visibility="collapsed", key="view_tabs",
+                    index=_slugs.index(qp.get("view")) if qp.get("view") in VIEWS else 0)
+    view_slug = _slugs[list(VIEWS.values()).index(view)]
+    if view_slug == "portfolio":
+        st.markdown("<div class='pf-jump'>On this page: <a href='#pf-filters'>Highlight filters</a>"
+                    "<a href='#pf-collab'>Who's working together</a><a href='#pf-buckets'>Research buckets ↓</a></div>",
+                    unsafe_allow_html=True)
 if qp.get("view") != view_slug:   # switched tabs: drop the old focus, keep the URL shareable
     qp.clear()
     qp["view"] = view_slug
@@ -269,6 +287,7 @@ else:
     st.caption("🔒 **View only.** Editing is limited to: " + ", ".join(EDITORS)
                + ". Choose your name in **Editing as** (top right) to make changes.")
 
+st.markdown("<div id='pf-filters' class='pf-anchor'></div>", unsafe_allow_html=True)
 f1, f2 = st.columns([3, 2])
 person_filter = f1.multiselect("Highlight people", people, placeholder="Show everyone",
                                default=[focus_person] if focus_person in people else [],
@@ -293,6 +312,7 @@ def _collab_index(active_list):
 def _dot_id(s):
     return '"' + str(s).replace('\\', '').replace('"', '') + '"'
 
+st.markdown("<div id='pf-collab' class='pf-anchor'></div>", unsafe_allow_html=True)
 with st.expander("🤝 Who's working together", expanded=False):
     pair = _collab_index(active)
     if not pair:
@@ -388,8 +408,11 @@ def is_dimmed(p):
             or (bool(ws_filter) and ov.get("workstream") not in ws_filter))
 
 filtering = bool(person_filter or ws_filter)
+st.markdown("<div id='pf-buckets' class='pf-anchor'></div>", unsafe_allow_html=True)
 st.markdown("#### Research buckets")
-st.caption("Broad themes that group our projects. Each project sits in one bucket.")
+st.markdown("<div class='pf-def'><div class='lbl'>What a research bucket is</div>"
+            "Research buckets are <b>broad themes</b> that group our projects. Each project sits in one bucket.</div>",
+            unsafe_allow_html=True)
 cols = st.columns(4)
 for col, bucket in zip(cols, BUCKETS):
     # Highlighted projects first, then the rest; alphabetical within each group

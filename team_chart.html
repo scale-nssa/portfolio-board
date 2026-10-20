@@ -135,6 +135,12 @@
             border-radius: 999px; padding: 3px 10px; text-decoration: none; }
   .jump a:hover { border-color: #127FA1; }
 
+  /* Definitions callout */
+  .def { background: #eef0fb; border: 1px solid #c9cdea; border-left: 5px solid #5a5fc0; border-radius: 8px;
+         padding: 12px 16px; margin: 4px 0 14px; font-size: 14px; line-height: 1.5; color: var(--ink); max-width: 900px; }
+  .def-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #5a5fc0; margin-bottom: 4px; }
+  .def ul { margin: 0; padding-left: 20px; }
+
   /* Part-time group */
   .pt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
 
@@ -158,8 +164,12 @@
 </nav>
 
 <h1 id="sec-teams">Research Teams</h1>
-<div class="sub">Teams are <b>membership-based, not hierarchical reporting structures</b>. Most people are on two teams, each with a de facto team lead, and they also work with project leads on individual projects. Each researcher has <b>one primary senior lead</b> (★) they go to.<br>
-Hover over a person to see every team they're on. <b>Click anyone</b> (including leads, and names in the table below) to see their active projects, grouped by research bucket. Badges show how many teams each person is on.</div>
+<div class="def"><div class="def-label">What a research team is</div><ul>
+  <li>Teams are <b>membership-based, not hierarchical reporting structures</b>.</li>
+  <li>Most people are on <b>two teams</b>, each with a de facto team lead, and they also work with project leads on individual projects.</li>
+  <li>Each researcher has <b>one primary senior lead</b> (★) they go to.</li>
+</ul></div>
+<div class="sub">Hover over a person to see every team they're on. <b>Click anyone</b> (including leads, and names in the table below) to see their active projects, grouped by research bucket. Badges show how many teams each person is on.</div>
 
 <div class="org">
   <div class="org-main">
@@ -179,8 +189,8 @@ Hover over a person to see every team they're on. <b>Click anyone</b> (including
 <div class="pt-grid" id="pt"></div>
 
 <h2 id="sec-ws">Workstreams</h2>
-<div class="sub" style="margin-bottom:12px">Workstreams are the largest commitments we plan staffing around. They cross areas and teams and don’t cover all our work.<br>
-Everyone on a workstream should also be on the lead's research team.</div>
+<div class="def"><div class="def-label">What a workstream is</div>Workstreams are <b>the largest commitments we plan staffing around</b>. They cross areas and teams and don’t cover all our work.</div>
+<div class="sub" style="margin-bottom:12px">Everyone on a workstream should also be on the lead's research team.</div>
 <h3 class="ws-group">US frontier models</h3>
 <div class="ws-grid" id="ws-frontier"></div>
 <h3 class="ws-group">Projects</h3>
