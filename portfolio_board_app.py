@@ -188,15 +188,16 @@ st.markdown("""<style>
                       backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
                       border-bottom: 1px solid rgba(127,127,127,.25); }
 /* "On this page" jump links (Portfolio tab) */
-.pf-jump { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 0.8rem; opacity: .9; }
-.pf-jump a { font-weight: 600; text-decoration: none; border: 1px solid rgba(127,127,127,.35);
-             border-radius: 999px; padding: 2px 10px; }
-.pf-jump a:hover { border-color: #5a5fc0; }
+.pf-jump { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: #6b7280; }
+.pf-jump a { cursor: pointer; font-weight: 600; color: #127FA1 !important; text-decoration: none !important; background: #fff;
+             border: 1px solid #e5e7eb; border-radius: 999px; padding: 3px 10px; }
+.pf-jump a:hover { border-color: #127FA1; }
 .pf-anchor { scroll-margin-top: 13rem; }
-/* Definition callout */
-.pf-def { background: rgba(90,95,192,.12); border: 1px solid rgba(90,95,192,.35); border-left: 5px solid #5a5fc0;
-          border-radius: 8px; padding: 10px 16px; margin: 4px 0 14px; max-width: 900px; }
-.pf-def .lbl { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #7b80d6; }
+/* Page heading and definition callout (match the Research Teams chart) */
+.pf-h1 { font-size: 22px; font-weight: 700; margin: 4px 0 6px; }
+.pf-def { background: #eef0fb; border: 1px solid #c9cdea; border-left: 5px solid #5a5fc0; border-radius: 8px;
+          padding: 12px 16px; margin: 4px 0 14px; font-size: 14px; line-height: 1.5; color: #1f2430; max-width: 900px; }
+.pf-def .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #5a5fc0; margin-bottom: 4px; }
 .st-key-view_tabs div[role="radiogroup"] { gap: 10px; flex-wrap: wrap; }
 .st-key-view_tabs [data-testid="stRadioOption"] {
     margin: 0 !important; padding: 10px 22px !important; border-radius: 10px; cursor: pointer;
@@ -218,7 +219,7 @@ with st.container(key="sticky_head"):
                     index=_slugs.index(qp.get("view")) if qp.get("view") in VIEWS else 0)
     view_slug = _slugs[list(VIEWS.values()).index(view)]
     if view_slug == "portfolio":
-        st.markdown("<div class='pf-jump'>On this page: <a href='#pf-filters'>Highlight filters</a>"
+        st.markdown("<div class='pf-jump'>On this page:<a href='#pf-filters'>Highlight filters</a>"
                     "<a href='#pf-collab'>Who's working together</a><a href='#pf-buckets'>Research buckets ↓</a></div>",
                     unsafe_allow_html=True)
 if qp.get("view") != view_slug:   # switched tabs: drop the old focus, keep the URL shareable
@@ -269,6 +270,10 @@ if view_slug == "rubric":
     st.html((Path(__file__).parent / "research_rubric.html").read_text(encoding="utf-8"))
     st.stop()
 
+st.markdown("<div class='pf-h1'>Portfolio</div>"
+            "<div class='pf-def'><div class='lbl'>What a research bucket is</div>"
+            "Research buckets are <b>broad themes</b> that group our projects. Each project sits in one bucket.</div>",
+            unsafe_allow_html=True)
 c1, c2 = st.columns([3, 1])
 with c1:
     st.caption(f"{len(active)} active projects · {len(people)} people · grouped into 4 research buckets. "
@@ -410,9 +415,6 @@ def is_dimmed(p):
 filtering = bool(person_filter or ws_filter)
 st.markdown("<div id='pf-buckets' class='pf-anchor'></div>", unsafe_allow_html=True)
 st.markdown("#### Research buckets")
-st.markdown("<div class='pf-def'><div class='lbl'>What a research bucket is</div>"
-            "Research buckets are <b>broad themes</b> that group our projects. Each project sits in one bucket.</div>",
-            unsafe_allow_html=True)
 cols = st.columns(4)
 for col, bucket in zip(cols, BUCKETS):
     # Highlighted projects first, then the rest; alphabetical within each group
