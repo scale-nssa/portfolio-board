@@ -127,14 +127,42 @@
   td.bk-n { font-weight: 600; color: var(--c); }
   td.bk-n.zero { color: #cbd5e1; font-weight: 400; }
 
+  /* Page nav (sticky, so it's clear there's more below) */
+  .jump { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+          margin: -32px -32px 20px; padding: 10px 32px; background: rgba(248,249,251,.95);
+          border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  .jump a { cursor: pointer; font-weight: 600; color: #127FA1; background: #fff; border: 1px solid var(--line);
+            border-radius: 999px; padding: 3px 10px; text-decoration: none; }
+  .jump a:hover { border-color: #127FA1; }
+  .jump a.tab { margin-left: auto; }
+  section[hidden] { display: none; }
+
+  /* Part-time group */
+  .pt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+
+  /* Sortable matrix headers */
+  #matrix thead tr:last-child th { cursor: pointer; user-select: none; }
+  #matrix thead tr:last-child th:hover { background: #e5e7eb; }
+  #matrix th .arr { font-size: 10px; color: var(--muted); margin-left: 3px; }
+
   @media print { body { background: #fff; padding: 12px; } .person { cursor: default; } }
 </style>
 </head>
 <body>
 
-<h1>Research Team Structure</h1>
-<div class="sub">Vertical teams by senior researcher. Hover over a person to see every team they're on; <b>click anyone</b> (including leads, and names in the table below) to see their active projects, grouped by research bucket. Badges show how many teams each person supports.</div>
 <div id="detail" class="detail" hidden></div>
+
+<section data-mode="team">
+<nav class="jump">On this page:
+  <a data-jump="sec-teams">Research Teams</a>
+  <a data-jump="sec-pt">Part-Time ↓</a>
+  <a data-jump="sec-matrix">Capacity matrix ↓</a>
+  <a data-view="workstreams" class="tab">Workstreams tab →</a>
+</nav>
+
+<h1 id="sec-teams">Research Teams</h1>
+<div class="sub">Teams are <b>membership-based, not hierarchical reporting structures</b>. Most people are on two teams, each with a de facto team lead, and they also work with project leads on individual projects. Each researcher has <b>one primary senior lead</b> (★) they go to.<br>
+Hover over a person to see every team they're on. <b>Click anyone</b> (including leads, and names in the table below) to see their active projects, grouped by research bucket. Badges show how many teams each person is on.</div>
 
 <div class="org">
   <div class="org-main">
@@ -147,18 +175,28 @@
   <div class="org-side" id="side"></div>
 </div>
 
-<div class="legend" id="legend"></div>
+<div class="legend"></div>
 
-<h2>Workstreams</h2>
-<div class="sub" style="margin-bottom:12px">Everyone on a workstream should also be on the lead's vertical team.</div>
+<h2 id="sec-pt">Part-Time</h2>
+<div class="sub" style="margin-bottom:12px">Students and part-time staff, kept out of the team columns above so those show full-time capacity. Each card lists the teams the person is on.</div>
+<div class="pt-grid" id="pt"></div>
+
+<h2 id="sec-matrix">Capacity matrix: who supports which team, and their projects by research bucket</h2>
+<div style="overflow-x:auto"><table id="matrix"></table></div>
+<div class="note">Click a column header to sort (click again to reverse). ★ = primary team · ☆ = planned or possible future primary · ○ = secondary team. Amber = on 2 teams · Red = on 3+ teams. Add % time per team to turn this into a real capacity view.</div>
+</section>
+
+<section data-mode="workstreams">
+<nav class="jump"><a data-view="team" class="tab">← Research Teams tab</a></nav>
+<h1>Workstreams</h1>
+<div class="sub">Workstreams are the largest commitments we plan staffing around. They cross areas and teams and don’t cover all our work.<br>
+Everyone on a workstream should also be on the lead's research team. <b>Click anyone</b> to see their active projects.</div>
 <h3 class="ws-group">US frontier models</h3>
 <div class="ws-grid" id="ws-frontier"></div>
 <h3 class="ws-group">Projects</h3>
 <div class="ws-grid" id="ws-projects"></div>
-
-<h2>Capacity matrix: who supports which team, and their projects by research bucket</h2>
-<div style="overflow-x:auto"><table id="matrix"></table></div>
-<div class="note">★ = primary team · ☆ = planned or possible future primary · ○ = secondary team. Amber = on 2 teams · Red = on 3+ teams. Add % time per team to turn this into a real capacity view.</div>
+<div class="legend"></div>
+</section>
 
 <script>
 const ROLE_COLORS = { "Staff Researcher": "var(--staff)", "Staff Researcher + Ops": "var(--staff)", "Postdoc": "var(--postdoc)", "Data Scientist": "var(--rda)", "RA": "var(--ra)", "Graduate RA": "var(--ra)", "Researcher": "var(--researcher)", "Ops": "var(--staff)" };
@@ -189,14 +227,21 @@ const badgeClass = n => n >= 3 ? "badge heavy" : n === 2 ? "badge multi" : "badg
 const projOf = n => PROJECTS[n] ?? [];
 const projCount = n => { const c = projOf(n).length; return ` · ${c} project${c === 1 ? "" : "s"}`; };
 
-const personChip = ([n, r], lead) => {
+// Which tab this is: "team" (Research Teams) or "workstreams"; the other tab's section stays hidden
+const MODE = D.mode ?? "team";
+document.querySelectorAll("section[data-mode]").forEach(s => s.hidden = s.dataset.mode !== MODE);
+
+// Part-time everywhere (students and part-time staff) go in the Part-Time group, not the team columns
+const isPT = n => !!TIME[n];
+
+const personChip = ([n, r], lead, showTeams = false) => {
   const k = people[n].teams.length;
   const plan = PLANNED[n];
   const tag = PRIMARY[n] === lead ? `<span class="primary">★ Primary${plan ? " (current)" : ""}</span>${plan ? `<div class="planned">→ ${planText(n)}</div>` : ""}`
             : plan?.to === lead ? `<span class="planned">☆ ${plan.tentative ? "Possible future primary" : `Future primary (${plan.note})`}</span>`
             : PRIMARY[n] ? `<span class="secondary">Primary: ${PRIMARY[n]}${plan ? ` → ${plan.to}${plan.tentative ? "?" : ""}` : ""}</span>` : "";
   const tm = timeAt(n, lead);
-  return `<div class="person${tm ? " pt" : ""}" data-p="${n}" style="--rc:${ROLE_COLORS[r]}"><div><div>${n}${tm ? `<span class="time">${tm}</span>` : ""}</div><div class="r">${r}${projCount(n)}</div>${tag ? `<div>${tag}</div>` : ""}</div><span class="${badgeClass(k)}">${k} team${k > 1 ? "s" : ""}</span></div>`;
+  return `<div class="person${tm ? " pt" : ""}" data-p="${n}" style="--rc:${ROLE_COLORS[r]}"><div><div>${n}${tm ? `<span class="time">${tm}</span>` : ""}</div><div class="r">${r}${projCount(n)}</div>${showTeams ? `<div class="r">Teams: ${people[n].teams.join(", ")}</div>` : ""}${tag ? `<div>${tag}</div>` : ""}</div><span class="${badgeClass(k)}">${k} team${k > 1 ? "s" : ""}</span></div>`;
 };
 
 // Leadership: directors with a "top" team (Monica, ops) sit in a side column beside the
@@ -215,10 +260,16 @@ const teamsEl = document.getElementById("teams");
 TEAMS.filter(t => !t.top).forEach(t => {
   const col = document.createElement("div");
   col.className = "team"; col.style.setProperty("--c", t.color);
-  col.innerHTML = `<div class="team-head"><div class="name clickname" data-p="${t.lead}">${t.lead}</div><div class="meta">${t.title} · ${t.members.length} ${t.members.length === 1 ? "person" : "people"}</div></div>
-    <div class="members">${t.members.map(m => personChip(m, t.lead)).join("")}</div>`;
+  const full = t.members.filter(([n]) => !isPT(n)), pt = t.members.length - full.length;
+  col.innerHTML = `<div class="team-head"><div class="name clickname" data-p="${t.lead}">${t.lead}</div><div class="meta">${t.title} · ${full.length} ${full.length === 1 ? "person" : "people"}${pt ? ` + ${pt} part-time` : ""}</div></div>
+    <div class="members">${full.map(m => personChip(m, t.lead)).join("")}</div>`;
   teamsEl.appendChild(col);
 });
+
+// Part-Time group: one card per person, listing the teams they're on
+const ptNames = Object.keys(people).filter(isPT).sort((a, b) => a.localeCompare(b));
+document.getElementById("pt").innerHTML = ptNames.map(n =>
+  personChip([n, [...people[n].roles].join(" / ")], null, true)).join("") || `<div class="note">No one is part-time.</div>`;
 
 // Workstreams
 const teamOf = lead => TEAMS.find(t => t.lead === lead);
@@ -321,8 +372,8 @@ document.addEventListener("click", e => {
 
 // Jump to the Portfolio tab. This chart sits in a sandboxed iframe, so the link is
 // created and clicked in the Streamlit page itself; it reloads with ?view=portfolio&…
-const goPortfolio = q => {
-  const url = `?view=portfolio&${q}`;
+const goView = (view, q) => {
+  const url = `?view=${view}${q ? `&${q}` : ""}`;
   try {
     const doc = window.parent.document, a = doc.createElement("a");
     a.href = url; a.target = "_self"; doc.body.appendChild(a); a.click(); a.remove();
@@ -330,26 +381,43 @@ const goPortfolio = q => {
 };
 document.addEventListener("click", e => {
   const g = e.target.closest("[data-go]");
-  if (g) { e.preventDefault(); e.stopPropagation(); goPortfolio(g.dataset.go); }
+  if (g) { e.preventDefault(); e.stopPropagation(); goView("portfolio", g.dataset.go); }
+  const v = e.target.closest("[data-view]");
+  if (v) { e.preventDefault(); goView(v.dataset.view); }
+  const j = e.target.closest("[data-jump]");
+  // Scroll only this frame (scrollIntoView would also scroll the Streamlit page and hide the nav)
+  const target = j && document.getElementById(j.dataset.jump);
+  if (target) window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - j.closest(".jump").offsetHeight - 12, behavior: "smooth" });
 });
 
 // Arriving from a Portfolio link: open that person, or scroll to that workstream
 if (FOCUS.person && (people[FOCUS.person] || PROJECTS[FOCUS.person])) showDetail(FOCUS.person);
-if (FOCUS.ws) document.getElementById(`ws-${FOCUS.ws}`)?.scrollIntoView({ block: "center" });
+if (FOCUS.ws && MODE === "workstreams") document.getElementById(`ws-${FOCUS.ws}`)?.scrollIntoView({ block: "center" });
 
-// Legend
-document.getElementById("legend").innerHTML =
+// Legend (one per tab)
+document.querySelectorAll(".legend").forEach(el => el.innerHTML =
   [["Staff Researcher","var(--staff)"],["Researcher","var(--researcher)"],["Postdoc","var(--postdoc)"],["Data Scientist","var(--rda)"],["RA / Graduate RA","var(--ra)"]]
-  .map(([l, c]) => `<span style="--rc:${c}">${l}</span>`).join("") + `<span class="pt-key">Dotted box = part-time</span>`;
+  .map(([l, c]) => `<span style="--rc:${c}">${l}</span>`).join("") + `<span class="pt-key">Dotted box = part-time</span>`);
 
-// Matrix, sorted by number of teams (most shared first)
-const names = Object.keys(people).sort((a, b) => people[b].teams.length - people[a].teams.length || a.localeCompare(b));
-document.getElementById("matrix").innerHTML =
-  `<tr class="grp"><th colspan="4"></th><th class="g" colspan="${TEAMS.length}">Vertical teams</th><th></th><th class="g">Workstream</th><th class="g" colspan="${BUCKETS.length + 1}">Active projects by research bucket</th></tr>` +
-  `<tr><th>Person</th><th>Role</th><th>Time</th><th>Primary</th>${TEAMS.map(t => `<th>${t.lead}</th>`).join("")}<th># Teams</th><th>Member of</th>${BUCKETS.map(b => `<th class="bk" style="--c:${BUCKET_COLOR[b]}">${b}</th>`).join("")}<th>Total projects</th></tr>` +
-  names.map(n => {
+// Matrix, sortable by any column header (default: number of teams, most shared first)
+const rolesOf = n => [...people[n].roles].filter(r => r !== "Ops" || people[n].roles.size === 1);
+const markRank = (n, lead) => !people[n].teams.includes(lead) ? 0 : PRIMARY[n] === lead ? 3 : PLANNED[n]?.to === lead ? 2 : 1;
+const inBucket = (n, b) => projOf(n).filter(x => x.bucket === b).length;
+const COLS = [
+  { label: "Person", key: n => n },
+  { label: "Role", key: n => rolesOf(n).join(" / ") },
+  { label: "Time", key: n => timeSummary(n) || "Full-time" },
+  { label: "Primary", key: n => PRIMARY[n] ?? "" },
+  ...TEAMS.map(t => ({ label: t.lead, key: n => markRank(n, t.lead), num: true })),
+  { label: "# Teams", key: n => people[n].teams.length, num: true },
+  { label: "Member of", key: n => (WS_OF[n] ?? []).join(", ") },
+  ...BUCKETS.map(b => ({ label: b, key: n => inBucket(n, b), num: true, bucket: b })),
+  { label: "Total projects", key: n => projOf(n).length, num: true },
+];
+let sortCol = COLS.findIndex(c => c.label === "# Teams"), sortDir = -1;
+const matrixRow = n => {
     const p = people[n], k = p.teams.length;
-    const roles = [...p.roles].filter(r => r !== "Ops" || p.roles.size === 1);
+    const roles = rolesOf(n);
     const mark = lead => !p.teams.includes(lead) ? ""
       : PRIMARY[n] === lead ? `<span class="dot star">★</span>`
       : PLANNED[n]?.to === lead ? `<span class="dot star" title="${planText(n)}">☆</span>`
@@ -357,7 +425,25 @@ document.getElementById("matrix").innerHTML =
     const byB = b => projOf(n).filter(x => x.bucket === b);
     return `<tr><td class="clickname" data-p="${n}"><b>${n}</b></td><td class="role">${roles.join(" / ")}</td><td class="role">${timeSummary(n) || "Full-time"}</td><td>${PRIMARY[n] ?? "—"}${PLANNED[n] ? `<div class="planned">${planText(n)}</div>` : ""}</td>${TEAMS.map(t =>
       `<td style="--c:${t.color}">${mark(t.lead)}</td>`).join("")}<td><span class="${badgeClass(k)}">${k}</span></td><td class="role">${(WS_OF[n] ?? []).join(", ")}</td>${BUCKETS.map(b => `<td class="bk-n${byB(b).length ? "" : " zero"}" style="--c:${BUCKET_COLOR[b]}" data-p="${n}" title="${byB(b).map(p => p.name).join("\n")}">${byB(b).length || "–"}</td>`).join("")}<td data-p="${n}" title="${projOf(n).map(p => p.name).join("\n")}"><b>${projOf(n).length}</b></td></tr>`;
-  }).join("");
+};
+const renderMatrix = () => {
+  const c = COLS[sortCol];
+  const cmp = (a, b) => c.num ? c.key(a) - c.key(b) : String(c.key(a)).localeCompare(String(c.key(b)));
+  const names = Object.keys(people).sort((a, b) => sortDir * cmp(a, b) || a.localeCompare(b));
+  document.getElementById("matrix").innerHTML =
+    `<thead><tr class="grp"><th colspan="4"></th><th class="g" colspan="${TEAMS.length}">Research teams</th><th></th><th class="g">Workstream</th><th class="g" colspan="${BUCKETS.length + 1}">Active projects by research bucket</th></tr>` +
+    `<tr>${COLS.map((col, i) => `<th data-sort="${i}"${col.bucket ? ` class="bk" style="--c:${BUCKET_COLOR[col.bucket]}"` : ""} title="Sort by ${col.label}">${col.label}<span class="arr">${i === sortCol ? (sortDir > 0 ? "▲" : "▼") : "↕"}</span></th>`).join("")}</tr></thead>` +
+    `<tbody>${names.map(matrixRow).join("")}</tbody>`;
+};
+document.getElementById("matrix").addEventListener("click", e => {
+  const th = e.target.closest("th[data-sort]");
+  if (!th) return;
+  const i = +th.dataset.sort;
+  sortDir = i === sortCol ? -sortDir : (COLS[i].num ? -1 : 1);   // numbers start high-to-low, text A–Z
+  sortCol = i;
+  renderMatrix();
+});
+renderMatrix();
 </script>
 </body>
 </html>

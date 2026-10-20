@@ -79,7 +79,7 @@ def load_roster():
 
 @st.cache_data(ttl=300)
 def load_team_structure():
-    """Vertical teams, primaries and workstreams for the Team structure view."""
+    """Research teams, primaries and workstreams for the Research Teams and Workstreams views."""
     repo = _repo()
     if repo:
         return json.loads(repo.get_contents(TEAM_PATH).decoded_content)
@@ -174,9 +174,12 @@ team_people = [n for n in people if not is_collaborator(n)]   # collaborators st
 roster_all = sorted(set(roster) | set(people))
 
 st.title("📋 SCALE Active Research Portfolio")
-# Views are linkable: ?view=portfolio|team|rubric, plus ?person=… or ?ws=… to focus on someone/a workstream
-VIEWS = {"team": "👥 Team structure", "portfolio": "📋 Portfolio", "rubric": "🧭 Prioritization rubric"}
+# Views are linkable: ?view=portfolio|team|workstreams|rubric, plus ?person=… or ?ws=… to focus on someone/a workstream
+VIEWS = {"team": "👥 Research Teams", "workstreams": "🧩 Workstreams", "portfolio": "📋 Portfolio",
+         "rubric": "🧭 Prioritization rubric"}
 qp = st.query_params
+if qp.get("view") == "team" and qp.get("ws"):   # old links: workstreams used to live on the team view
+    qp["view"] = "workstreams"
 _slugs = list(VIEWS)
 # Style the view picker as large tabs that stay pinned at the top while scrolling
 st.markdown("""<style>
@@ -210,8 +213,8 @@ team_data = load_team_structure()
 WORKSTREAMS = [w["name"] for w in team_data.get("workstreams", [])]
 WS_COLOR = {w["name"]: w.get("color", "#94a3b8") for w in team_data.get("workstreams", [])}
 
-# ── Team structure view ──────────────────────────────────────────────────────
-def render_team_structure():
+# ── Research Teams / Workstreams views (one chart template, two modes) ──────
+def render_team_structure(mode):
     data = dict(team_data)
     by_person = {}
     for p in active:
@@ -229,23 +232,27 @@ def render_team_structure():
         key=lambda x: x["name"].lower())
     data["bucket_colors"] = BUCKET_COLOR
     data["focus"] = {"person": focus_person, "ws": focus_ws}
+    data["mode"] = mode
     html = (Path(__file__).parent / "team_chart.html").read_text(encoding="utf-8")
     html = html.replace("__TEAM_DATA__", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
-    st.caption("Vertical teams, primaries and workstreams, linked to the active projects in the Portfolio tab. "
-               "Click a person to see their projects by research bucket. Workstream projects come from each project's "
-               "Workstream tag (set it in the Portfolio view's edit panel).")
+    if mode == "team":
+        st.caption("Research teams and primaries, linked to the active projects in the Portfolio tab. "
+                   "Scroll down in the chart for the Part-Time group and the capacity matrix.")
+    else:
+        st.caption("Workstream projects come from each project's Workstream tag "
+                   "(set it in the Portfolio view's edit panel).")
     if hasattr(st, "iframe"):   # st.components.v1.html is deprecated in favor of st.iframe
         st.iframe(html, height=1200)
     else:
         import streamlit.components.v1 as components
         components.html(html, height=1200, scrolling=True)
 
-if view == "👥 Team structure":
-    render_team_structure()
+if view_slug in ("team", "workstreams"):
+    render_team_structure(view_slug)
     st.stop()
 
 # ── Prioritization rubric view ───────────────────────────────────────────────
-if view == "🧭 Prioritization rubric":
+if view_slug == "rubric":
     st.html((Path(__file__).parent / "research_rubric.html").read_text(encoding="utf-8"))
     st.stop()
 
@@ -386,6 +393,8 @@ def is_dimmed(p):
             or (bool(ws_filter) and ov.get("workstream") not in ws_filter))
 
 filtering = bool(person_filter or ws_filter)
+st.markdown("#### Research buckets")
+st.caption("Broad themes that group our projects. Each project sits in one bucket.")
 cols = st.columns(4)
 for col, bucket in zip(cols, BUCKETS):
     # Highlighted projects first, then the rest; alphabetical within each group
@@ -421,7 +430,7 @@ for col, bucket in zip(cols, BUCKETS):
                 f"<div style='opacity:{opacity};border:1px solid #ddd;border-left:3px solid {color};"
                 f"border-radius:10px;padding:9px 11px;margin-bottom:9px'>"
                 f"<div style='font-weight:600;font-size:0.95rem'>{name}</div>"
-                + (f"<a href='?view=team&ws={quote(ws)}' target='_self' title='See the {ws} workstream in Team structure' "
+                + (f"<a href='?view=workstreams&ws={quote(ws)}' target='_self' title='See the {ws} workstream on the Workstreams tab' "
                    f"style='display:inline-block;margin-top:3px;font-size:0.7rem;font-weight:600;color:#fff;"
                    f"background:{WS_COLOR.get(ws, '#94a3b8')};border-radius:999px;padding:1px 8px;text-decoration:none'>"
                    f"{ws} ↗</a>" if ws else "") +
@@ -440,7 +449,7 @@ for col, bucket in zip(cols, BUCKETS):
                     _ws_opts = ["— none —"] + WORKSTREAMS
                     new_ws = st.selectbox("Workstream", _ws_opts,
                                           index=_ws_opts.index(ws) if ws in WORKSTREAMS else 0, key=f"ws_{pid}",
-                                          help="Links this project to a workstream on the Team structure tab.")
+                                          help="Links this project to a workstream on the Workstreams tab.")
 
                     st.markdown("**Team**")
                     new_team = []
