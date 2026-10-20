@@ -188,13 +188,14 @@ st.markdown("""<style>
                       backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
                       border-bottom: 1px solid rgba(127,127,127,.25); }
 /* "On this page" jump links (Portfolio tab) */
-.pf-jump { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: #6b7280; }
+.pf-jump { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: #6b7280;
+           background: #f8f9fb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 16px; margin: 2px 0 10px; }
 .pf-jump a { cursor: pointer; font-weight: 600; color: #127FA1 !important; text-decoration: none !important; background: #fff;
              border: 1px solid #e5e7eb; border-radius: 999px; padding: 3px 10px; }
 .pf-jump a:hover { border-color: #127FA1; }
-.pf-anchor { scroll-margin-top: 13rem; }
+.pf-anchor { scroll-margin-top: 10rem; }
 /* Page heading and definition callout (match the Research Teams chart) */
-.pf-h1 { font-size: 22px; font-weight: 700; margin: 4px 0 6px; }
+.pf-h1 { font-size: 22px; font-weight: 700; margin: 8px 0 6px; }
 .pf-def { background: #eef0fb; border: 1px solid #c9cdea; border-left: 5px solid #5a5fc0; border-radius: 8px;
           padding: 12px 16px; margin: 4px 0 14px; font-size: 14px; line-height: 1.5; color: #1f2430; max-width: 900px; }
 .pf-def .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #5a5fc0; margin-bottom: 4px; }
@@ -213,15 +214,11 @@ st.markdown("""<style>
 .st-key-view_tabs [data-testid="stRadioOption"][data-selected="true"] p,
 .st-key-view_tabs [data-testid="stRadioOption"]:has(input:checked) p { color: #fff !important; }
 </style>""", unsafe_allow_html=True)
-# The tabs (and the Portfolio tab's jump links) sit in one container that stays pinned at the top
+# The tabs sit in a container that stays pinned at the top
 with st.container(key="sticky_head"):
     view = st.radio("View", list(VIEWS.values()), horizontal=True, label_visibility="collapsed", key="view_tabs",
                     index=_slugs.index(qp.get("view")) if qp.get("view") in VIEWS else 0)
     view_slug = _slugs[list(VIEWS.values()).index(view)]
-    if view_slug == "portfolio":
-        st.markdown("<div class='pf-jump'>On this page:<a href='#pf-filters'>Highlight filters</a>"
-                    "<a href='#pf-collab'>Who's working together</a><a href='#pf-buckets'>Research buckets ↓</a></div>",
-                    unsafe_allow_html=True)
 if qp.get("view") != view_slug:   # switched tabs: drop the old focus, keep the URL shareable
     qp.clear()
     qp["view"] = view_slug
@@ -270,15 +267,19 @@ if view_slug == "rubric":
     st.html((Path(__file__).parent / "research_rubric.html").read_text(encoding="utf-8"))
     st.stop()
 
-st.markdown("<div class='pf-h1'>Portfolio</div>"
-            "<div class='pf-def'><div class='lbl'>What a research bucket is</div>"
-            "Research buckets are <b>broad themes</b> that group our projects. Each project sits in one bucket.</div>",
-            unsafe_allow_html=True)
-c1, c2 = st.columns([3, 1])
-with c1:
-    st.caption(f"{len(active)} active projects · {len(people)} people · grouped into 4 research buckets. "
-               "Excludes Done & Sunsetted. Live from the project database.")
-with c2:
+st.caption(f"{len(active)} active projects · {len(people)} people · grouped into 4 research buckets. "
+           "Excludes Done & Sunsetted. Live from the project database.")
+st.markdown("<div class='pf-jump'>On this page:<a href='#pf-buckets'>Research buckets</a>"
+            "<a href='#pf-collab'>Who's working together ↓</a></div>", unsafe_allow_html=True)
+
+# ── Research buckets: heading, definition, editing and filters ──────────────
+h1, h2 = st.columns([3, 1], vertical_alignment="bottom")
+with h1:
+    st.markdown("<div id='pf-buckets' class='pf-anchor'></div><div class='pf-h1'>Research buckets</div>"
+                "<div class='pf-def'><div class='lbl'>What a research bucket is</div>"
+                "Research buckets are <b>broad themes</b> that group our projects. Each project sits in one bucket.</div>",
+                unsafe_allow_html=True)
+with h2:
     editor_sel = st.selectbox("Editing as", ["— view only —"] + EDITORS,
                               help="Select your name to make edits. Editing is limited to research leads.")
 st.session_state.editor = editor_sel if editor_sel in EDITORS else ""
@@ -290,9 +291,8 @@ if can_edit:
 else:
     edit_mode = False
     st.caption("🔒 **View only.** Editing is limited to: " + ", ".join(EDITORS)
-               + ". Choose your name in **Editing as** (top right) to make changes.")
+               + ". Choose your name in **Editing as** (right) to make changes.")
 
-st.markdown("<div id='pf-filters' class='pf-anchor'></div>", unsafe_allow_html=True)
 f1, f2 = st.columns([3, 2])
 person_filter = f1.multiselect("Highlight people", people, placeholder="Show everyone",
                                default=[focus_person] if focus_person in people else [],
@@ -300,84 +300,6 @@ person_filter = f1.multiselect("Highlight people", people, placeholder="Show eve
 ws_filter = f2.multiselect("Highlight workstreams", WORKSTREAMS, placeholder="All workstreams",
                            default=[focus_ws] if focus_ws in WORKSTREAMS else [],
                            help="Move projects tagged with the selected workstreams to the top and dim the rest.")
-
-# ── Collaboration view: who works together ───────────────────────────────────
-def _collab_index(active_list):
-    from collections import defaultdict
-    pair = defaultdict(list)      # frozenset({a,b}) -> [project names]
-    for p in active_list:
-        team = dedupe_team((p.get("overview") or {}).get("team"))
-        names = sorted({m["name"] for m in team if m["name"] in team_people})
-        pname = (p.get("overview") or {}).get("name") or p["id"]
-        for i in range(len(names)):
-            for j in range(i + 1, len(names)):
-                pair[frozenset((names[i], names[j]))].append(pname)
-    return pair
-
-def _dot_id(s):
-    return '"' + str(s).replace('\\', '').replace('"', '') + '"'
-
-st.markdown("<div id='pf-collab' class='pf-anchor'></div>", unsafe_allow_html=True)
-with st.expander("🤝 Who's working together", expanded=False):
-    pair = _collab_index(active)
-    if not pair:
-        st.caption("No shared-project collaborations found.")
-    else:
-        f1, f2 = st.columns([2, 2])
-        focus = f1.selectbox("Focus on a person", ["— everyone —"] + team_people,
-                             help="Show only this person and their collaborators.")
-        focus = None if focus.startswith("—") else focus
-        max_w = max(len(v) for v in pair.values())
-        min_shared = f2.slider("Minimum shared projects (edge)", 1, max(2, max_w), 1,
-                               help="Hide pairs who share fewer than this many active projects.")
-
-        edges, nodes = [], set()
-        for pr, projs in pair.items():
-            w = len(projs)
-            if w < min_shared:
-                continue
-            a, b = tuple(pr)
-            if focus and focus not in (a, b):
-                continue
-            nodes.add(a); nodes.add(b)
-            edges.append((a, b, w))
-        if focus:
-            nodes.add(focus)
-
-        if not edges:
-            st.info(("No co-workers" if focus else "No pairs") +
-                    f" share ≥ {min_shared} active projects at this threshold.")
-        else:
-            dot = ["graph G {",
-                   'graph [layout=neato, overlap=false, splines=true, bgcolor="transparent"];',
-                   'node [shape=ellipse, style="filled", fillcolor="#eef1f5", color="#c7d0de", '
-                   'fontname="Helvetica", fontsize=11, fontcolor="#1a2030"];',
-                   'edge [color="#9aa6b8"];']
-            for n in sorted(nodes):
-                if focus and n == focus:
-                    dot.append(f'{_dot_id(n)} [fillcolor="#5a5fc0", fontcolor="white", color="#5a5fc0"];')
-                else:
-                    dot.append(f'{_dot_id(n)} ;')
-            for a, b, w in edges:
-                pen = min(1 + (w - 1) * 0.9, 7)
-                dot.append(f'{_dot_id(a)} -- {_dot_id(b)} [penwidth={pen:.1f}, '
-                           f'label="{w if w > 1 else ""}", fontsize=9, fontcolor="#727d94"];')
-            dot.append("}")
-            st.graphviz_chart("\n".join(dot), use_container_width=True)
-            st.caption("Each line links people who share an active project; thicker = more shared projects.")
-
-            if focus:
-                import pandas as pd
-                rows = []
-                for pr, projs in pair.items():
-                    if focus in pr and len(projs) >= min_shared:
-                        other = next(x for x in pr if x != focus)
-                        rows.append({"Collaborator": other, "# shared": len(projs),
-                                     "Shared projects": ", ".join(sorted(projs))})
-                rows.sort(key=lambda r: (-r["# shared"], r["Collaborator"]))
-                if rows:
-                    st.markdown(f"**{focus}** works with **{len(rows)}** {'person' if len(rows)==1 else 'people'}:")
-                    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
 # ── Add project ──────────────────────────────────────────────────────────────
 if edit_mode:
@@ -413,8 +335,6 @@ def is_dimmed(p):
             or (bool(ws_filter) and ov.get("workstream") not in ws_filter))
 
 filtering = bool(person_filter or ws_filter)
-st.markdown("<div id='pf-buckets' class='pf-anchor'></div>", unsafe_allow_html=True)
-st.markdown("#### Research buckets")
 cols = st.columns(4)
 for col, bucket in zip(cols, BUCKETS):
     # Highlighted projects first, then the rest; alphabetical within each group
@@ -527,6 +447,86 @@ for col, bucket in zip(cols, BUCKETS):
                             st.cache_data.clear()
                             st.session_state.pop(f"confirm_rm_{pid}", None)
                             st.rerun()
+
+# ── Collaboration view: who works together ───────────────────────────────────
+def _collab_index(active_list):
+    from collections import defaultdict
+    pair = defaultdict(list)      # frozenset({a,b}) -> [project names]
+    for p in active_list:
+        team = dedupe_team((p.get("overview") or {}).get("team"))
+        names = sorted({m["name"] for m in team if m["name"] in team_people})
+        pname = (p.get("overview") or {}).get("name") or p["id"]
+        for i in range(len(names)):
+            for j in range(i + 1, len(names)):
+                pair[frozenset((names[i], names[j]))].append(pname)
+    return pair
+
+def _dot_id(s):
+    return '"' + str(s).replace('\\', '').replace('"', '') + '"'
+
+st.markdown("<div id='pf-collab' class='pf-anchor'></div><div class='pf-h1'>🤝 Who's working together</div>",
+            unsafe_allow_html=True)
+st.caption("People linked by the active projects they share. Focus on one person to see who they work with.")
+with st.container(border=True):
+    pair = _collab_index(active)
+    if not pair:
+        st.caption("No shared-project collaborations found.")
+    else:
+        f1, f2 = st.columns([2, 2])
+        focus = f1.selectbox("Focus on a person", ["— everyone —"] + team_people,
+                             help="Show only this person and their collaborators.")
+        focus = None if focus.startswith("—") else focus
+        max_w = max(len(v) for v in pair.values())
+        min_shared = f2.slider("Minimum shared projects (edge)", 1, max(2, max_w), 1,
+                               help="Hide pairs who share fewer than this many active projects.")
+
+        edges, nodes = [], set()
+        for pr, projs in pair.items():
+            w = len(projs)
+            if w < min_shared:
+                continue
+            a, b = tuple(pr)
+            if focus and focus not in (a, b):
+                continue
+            nodes.add(a); nodes.add(b)
+            edges.append((a, b, w))
+        if focus:
+            nodes.add(focus)
+
+        if not edges:
+            st.info(("No co-workers" if focus else "No pairs") +
+                    f" share ≥ {min_shared} active projects at this threshold.")
+        else:
+            dot = ["graph G {",
+                   'graph [layout=neato, overlap=false, splines=true, bgcolor="transparent"];',
+                   'node [shape=ellipse, style="filled", fillcolor="#eef1f5", color="#c7d0de", '
+                   'fontname="Helvetica", fontsize=11, fontcolor="#1a2030"];',
+                   'edge [color="#9aa6b8"];']
+            for n in sorted(nodes):
+                if focus and n == focus:
+                    dot.append(f'{_dot_id(n)} [fillcolor="#5a5fc0", fontcolor="white", color="#5a5fc0"];')
+                else:
+                    dot.append(f'{_dot_id(n)} ;')
+            for a, b, w in edges:
+                pen = min(1 + (w - 1) * 0.9, 7)
+                dot.append(f'{_dot_id(a)} -- {_dot_id(b)} [penwidth={pen:.1f}, '
+                           f'label="{w if w > 1 else ""}", fontsize=9, fontcolor="#727d94"];')
+            dot.append("}")
+            st.graphviz_chart("\n".join(dot), use_container_width=True)
+            st.caption("Each line links people who share an active project; thicker = more shared projects.")
+
+            if focus:
+                import pandas as pd
+                rows = []
+                for pr, projs in pair.items():
+                    if focus in pr and len(projs) >= min_shared:
+                        other = next(x for x in pr if x != focus)
+                        rows.append({"Collaborator": other, "# shared": len(projs),
+                                     "Shared projects": ", ".join(sorted(projs))})
+                rows.sort(key=lambda r: (-r["# shared"], r["Collaborator"]))
+                if rows:
+                    st.markdown(f"**{focus}** works with **{len(rows)}** {'person' if len(rows)==1 else 'people'}:")
+                    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
 st.divider()
 st.caption("Leads are **bold**. Changes write to data/projects.json in scale-nssa/project-database. "
