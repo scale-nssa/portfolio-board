@@ -198,7 +198,7 @@
 
 <h2 id="sec-matrix">Capacity matrix: who supports which team, and their projects by research bucket</h2>
 <div style="overflow-x:auto"><table id="matrix"></table></div>
-<div class="note">Click a column header to sort (click again to reverse). ★ = primary team · ☆ = planned or possible future primary · ○ = secondary team. Amber = on 2 teams · Red = on 3+ teams. Add % time per team to turn this into a real capacity view.</div>
+<div class="note">Click a column header to sort (click again to reverse). ★ = primary team · ☆ = planned or potential future primary · ○ = secondary team. Amber = on 2 teams · Red = on 3+ teams. Add % time per team to turn this into a real capacity view.</div>
 
 <script>
 const ROLE_COLORS = { "Staff Researcher": "var(--staff)", "Staff Researcher + Ops": "var(--staff)", "Postdoc": "var(--postdoc)", "Data Scientist": "var(--rda)", "RA": "var(--ra)", "Graduate RA": "var(--ra)", "Researcher": "var(--researcher)", "Ops": "var(--staff)" };
@@ -236,7 +236,7 @@ const personChip = ([n, r], lead, showTeams = false) => {
   const k = people[n].teams.length;
   const plan = PLANNED[n];
   const tag = PRIMARY[n] === lead ? `<span class="primary">★ Primary${plan ? " (current)" : ""}</span>${plan ? `<div class="planned">→ ${planText(n)}</div>` : ""}`
-            : plan?.to === lead ? `<span class="planned">☆ ${plan.tentative ? "Possible future primary" : `Future primary (${plan.note})`}</span>`
+            : plan?.to === lead ? `<span class="planned">☆ ${plan.tentative ? "Potential future primary" : `Future primary (${plan.note})`}</span>`
             : PRIMARY[n] ? `<span class="secondary">Primary: ${PRIMARY[n]}${plan ? ` → ${plan.to}${plan.tentative ? "?" : ""}` : ""}</span>` : "";
   const tm = timeAt(n, lead);
   return `<div class="person${tm ? " pt" : ""}" data-p="${n}" style="--rc:${ROLE_COLORS[r]}"><div><div>${n}${tm ? `<span class="time">${tm}</span>` : ""}</div><div class="r">${r}${projCount(n)}</div>${showTeams ? `<div class="r">Teams: ${people[n].teams.join(", ")}</div>` : ""}${tag ? `<div>${tag}</div>` : ""}</div><span class="${badgeClass(k)}">${k} team${k > 1 ? "s" : ""}</span></div>`;
