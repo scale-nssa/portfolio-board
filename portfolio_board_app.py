@@ -43,6 +43,7 @@ EXCLUDE = {"complete", "sunsetted"}
 REPO_DEFAULT = "scale-nssa/project-database"
 DATA_PATH = "data/projects.json"
 TEAM_PATH = "data/team_structure.json"
+TAGS_PATH = "data/portfolio_tags.json"   # tag categories and their values, for the Tags view
 
 # ── Data I/O (GitHub-backed, with local fallback) ────────────────────────────
 def _repo():
@@ -84,6 +85,17 @@ def load_team_structure():
     if repo:
         return json.loads(repo.get_contents(TEAM_PATH).decoded_content)
     return json.loads((Path(__file__).parent / TEAM_PATH).read_text(encoding="utf-8"))
+
+@st.cache_data(ttl=300)
+def load_tag_config():
+    """Tag categories (key, label, values) for the Tags view; empty if the file isn't there yet."""
+    try:
+        repo = _repo()
+        if repo:
+            return json.loads(repo.get_contents(TAGS_PATH).decoded_content)
+        return json.loads((Path(__file__).parent / TAGS_PATH).read_text(encoding="utf-8"))
+    except Exception:
+        return {"dimensions": []}
 
 def apply_and_save(pid, mutate, summary, editor):
     """Fetch fresh, mutate the one project (or append when pid is None), commit."""
@@ -174,8 +186,9 @@ team_people = [n for n in people if not is_collaborator(n)]   # collaborators st
 roster_all = sorted(set(roster) | set(people))
 
 st.title("📋 SCALE Active Research Portfolio")
-# Views are linkable: ?view=portfolio|team|rubric, plus ?person=… or ?ws=… to focus on someone/a workstream
-VIEWS = {"team": "👥 Research Teams", "portfolio": "📋 Portfolio", "rubric": "🧭 Prioritization rubric"}
+# Views are linkable: ?view=portfolio|team|tags|rubric, plus ?person=… or ?ws=… to focus on someone/a workstream
+VIEWS = {"team": "👥 Research Teams", "portfolio": "📋 Portfolio", "tags": "🏷️ Tags",
+         "rubric": "🧭 Prioritization rubric"}
 qp = st.query_params
 if qp.get("view") == "workstreams":   # workstreams briefly had their own tab; they're on Research Teams again
     qp["view"] = "team"
@@ -266,6 +279,286 @@ if view_slug == "team":
 if view_slug == "rubric":
     st.html((Path(__file__).parent / "research_rubric.html").read_text(encoding="utf-8"))
     st.stop()
+
+# ── Tags view: tag projects and group the portfolio by any tag ───────────────
+# Built-in groupings come from existing fields; tag dimensions (and their values) come from
+# data/portfolio_tags.json. Each project's tags live in overview.tags = {dimension key: [values]}.
+TAG_COLORS = ["#5a5fc0", "#0d8a99", "#b3364d", "#bd7a2c", "#2563eb", "#0d9488", "#d97706", "#db2777",
+              "#65a30d", "#7c3aed", "#475569", "#0891b2"]
+NO_GROUP = "Not tagged"
+
+def tags_of(p, key):
+    return list(((p.get("overview") or {}).get("tags") or {}).get(key) or [])
+
+def research_teams_of(p):
+    """A project's research teams: each project Lead's team (the team they lead, else their primary's)."""
+    leads_ = {t["lead"] for t in team_data.get("teams", [])}
+    prim = team_data.get("primary", {})
+    out = []
+    for m in visible_team(dedupe_team((p.get("overview") or {}).get("team"))):
+        if m["role"] != "Lead":
+            continue
+        t = m["name"] if m["name"] in leads_ else prim.get(m["name"])
+        if t and t not in out:
+            out.append(t)
+    return out
+
+def apply_many(mutate_all, summary, editor):
+    """Like apply_and_save, but one commit that may change many projects: mutate_all(projects)."""
+    if editor not in EDITORS:
+        st.error("You don't have edit permission — select your name (research leads only).")
+        return
+    repo = _repo()
+    who = (editor or "someone").strip() or "someone"
+    if repo:
+        f = repo.get_contents(DATA_PATH)
+        projects_ = json.loads(f.decoded_content)
+        mutate_all(projects_)
+        repo.update_file(DATA_PATH, f"Portfolio board: {summary} — via public board by {who}",
+                         json.dumps(projects_, indent=2, ensure_ascii=False), f.sha)
+    else:
+        path = Path(__file__).parent / DATA_PATH
+        projects_ = json.loads(path.read_text(encoding="utf-8"))
+        mutate_all(projects_)
+        path.write_text(json.dumps(projects_, indent=2, ensure_ascii=False), encoding="utf-8")
+    st.cache_data.clear()
+
+def save_tag_config(cfg, summary, editor):
+    """Write the tag dimensions/values file (used when someone adds a new tag value)."""
+    if editor not in EDITORS:
+        return
+    content = json.dumps(cfg, indent=2, ensure_ascii=False)
+    repo = _repo()
+    if repo:
+        msg = f"Portfolio board: {summary} — via public board by {editor}"
+        try:
+            f = repo.get_contents(TAGS_PATH)
+            repo.update_file(TAGS_PATH, msg, content, f.sha)
+        except Exception:
+            repo.create_file(TAGS_PATH, msg, content)
+    else:
+        (Path(__file__).parent / TAGS_PATH).write_text(content, encoding="utf-8")
+    st.cache_data.clear()
+
+def _set_tag(p, key, value, on):
+    ov = p.setdefault("overview", {})
+    tags = ov.setdefault("tags", {})
+    vals = [v for v in (tags.get(key) or []) if v != value]
+    if on:
+        vals.append(value)
+    if vals:
+        tags[key] = vals
+    else:
+        tags.pop(key, None)
+    if not tags:
+        ov.pop("tags", None)
+
+def render_tags():
+    cfg = load_tag_config()
+    dims = cfg.get("dimensions", [])
+    pname = lambda p: (p.get("overview") or {}).get("name") or p["id"]
+    team_color = {t["lead"]: t.get("color", "#94a3b8") for t in team_data.get("teams", [])}
+
+    # Groupings: three built in, then every tag dimension
+    groupings = {
+        "Research bucket": (BUCKETS, lambda p: [bucket_of(p)], lambda v: BUCKET_COLOR.get(v)),
+        "Workstream": (WORKSTREAMS, lambda p: [w] if (w := (p.get("overview") or {}).get("workstream")) in WORKSTREAMS else [],
+                       lambda v: WS_COLOR.get(v)),
+        "Research team": ([t["lead"] for t in team_data.get("teams", [])], research_teams_of, lambda v: team_color.get(v)),
+    }
+    for d in dims:
+        vals = d.get("values", [])
+        groupings[d["label"]] = (vals, (lambda k: lambda p: tags_of(p, k))(d["key"]),
+                                 (lambda vs: lambda v: TAG_COLORS[vs.index(v) % len(TAG_COLORS)] if v in vs else "#94a3b8")(vals))
+
+    n_tagged = sum(1 for p in active if (p.get("overview") or {}).get("tags"))
+    st.caption(f"{len(active)} active projects · {n_tagged} tagged so far. Excludes Done & Sunsetted. "
+               "Live from the project database.")
+    st.markdown("<div class='pf-jump'>On this page:<a href='#tg-group'>Group projects</a>"
+                "<a href='#tg-edit'>Tag projects ↓</a></div>", unsafe_allow_html=True)
+
+    h1, h2 = st.columns([3, 1], vertical_alignment="bottom")
+    with h1:
+        st.markdown("<div id='tg-group' class='pf-anchor'></div><div class='pf-h1'>Group projects by tag</div>"
+                    "<div class='pf-def'><div class='lbl'>What tags are</div>"
+                    "Tags are <b>labels you add to projects</b> (funder, study focus, grant goal, design…) so the "
+                    "portfolio can be grouped and counted different ways. A project can have several tags in a "
+                    "category, so it can show up in more than one group.</div>", unsafe_allow_html=True)
+    with h2:
+        editor_sel = st.selectbox("Editing as", ["— view only —"] + EDITORS, key="tags_editor",
+                                  help="Select your name to add or change tags. Editing is limited to research leads.")
+    editor = editor_sel if editor_sel in EDITORS else ""
+
+    g1, g2 = st.columns([1, 2])
+    group_by = g1.selectbox("Group by", list(groupings), index=3 if len(groupings) > 3 else 0)
+    filt_opts = [f"{d['label']}: {v}" for d in dims for v in d.get("values", [])]
+    filt = g2.multiselect("Only show projects tagged", filt_opts, placeholder="All projects",
+                          help="Within one category, a project needs any of the picked tags; across categories, all of them.")
+
+    def passes(p):
+        by_dim = {}
+        for f in filt:
+            lab, v = f.split(": ", 1)
+            by_dim.setdefault(lab, []).append(v)
+        for d in dims:
+            if d["label"] in by_dim and not set(by_dim[d["label"]]) & set(tags_of(p, d["key"])):
+                return False
+        return True
+
+    values, key_fn, color_fn = groupings[group_by]
+    shown = [p for p in active if passes(p)]
+    groups = {v: [] for v in values}
+    groups[NO_GROUP] = []
+    for p in shown:
+        ks = [k for k in key_fn(p) if k in groups] or [NO_GROUP]
+        for k in ks:
+            groups[k].append(p)
+    order = [v for v in values if groups[v]] + [v for v in values if not groups[v]] + [NO_GROUP]
+
+    def card(p, color):
+        ov = p.get("overview") or {}
+        stage = (p.get("process") or {}).get("stage")
+        ppl = ", ".join(f"<b>{m['name']}</b>" if m["role"] == "Lead" else m["name"]
+                        for m in visible_team(dedupe_team(ov.get("team")))) or "<i>No one assigned</i>"
+        chips = "".join(
+            f"<span style='display:inline-block;font-size:0.68rem;border:1px solid rgba(127,127,127,.35);"
+            f"border-radius:999px;padding:0 7px;margin:2px 3px 0 0'>{v}</span>"
+            for d in dims if d["label"] != group_by for v in tags_of(p, d["key"]))
+        return (f"<div style='border:1px solid #ddd;border-left:3px solid {color};border-radius:10px;"
+                f"padding:9px 11px;margin-bottom:9px'><div style='font-weight:600;font-size:0.95rem'>{pname(p)}</div>"
+                f"<div style='font-family:monospace;font-size:0.72rem;color:{BUCKET_COLOR[bucket_of(p)]};margin:3px 0 4px'>"
+                f"{bucket_of(p)} · {STAGE_LABELS.get(stage, stage)}</div>"
+                f"<div style='font-size:0.82rem;color:#555'>{ppl}</div>{f'<div>{chips}</div>' if chips else ''}</div>")
+
+    nonempty = [g for g in order if groups[g]]
+    if not nonempty:
+        st.info("No projects match these filters.")
+    per_row = 4
+    for i in range(0, len(nonempty), per_row):
+        cols_ = st.columns(per_row)
+        for col, g in zip(cols_, nonempty[i:i + per_row]):
+            color = "#94a3b8" if g == NO_GROUP else (color_fn(g) or "#94a3b8")
+            with col:
+                st.markdown(f"<div style='border-bottom:3px solid {color};padding-bottom:6px;margin:8px 0 10px'>"
+                            f"<span style='font-weight:700'>{g}</span> <span style='color:{color};font-family:monospace;"
+                            f"float:right'>{len(groups[g])}</span></div>", unsafe_allow_html=True)
+                with st.container(height=520, border=False):
+                    for p in sorted(groups[g], key=lambda p: pname(p).lower()):
+                        st.markdown(card(p, color), unsafe_allow_html=True)
+    empty = [g for g in values if not groups[g]]
+    if empty:
+        st.caption("No projects yet: " + ", ".join(empty))
+
+    # ── Tagging ──────────────────────────────────────────────────────────────
+    st.markdown("<div id='tg-edit' class='pf-anchor'></div><div class='pf-h1'>🏷️ Tag projects</div>",
+                unsafe_allow_html=True)
+    if not editor:
+        st.caption("🔒 **View only.** Choose your name in **Editing as** (above right) to add or change tags. "
+                   "Editing is limited to: " + ", ".join(EDITORS) + ".")
+        return
+    by_id = {p["id"]: p for p in active}
+    t_tag, t_proj, t_cat = st.tabs(["Apply one tag to many projects", "Edit one project's tags", "Edit categories"])
+
+    with t_cat:
+        st.caption("Rename a category, change its list of tags (one per line), add a category, or delete one. "
+                   "Taking a tag off a list doesn't remove it from projects that already have it.")
+        NEWCAT = "➕ New category"
+        cat = st.selectbox("Category", [d["label"] for d in dims] + [NEWCAT], key="tgc_pick")
+        d = next((x for x in dims if x["label"] == cat), None)
+        k = d["key"] if d else "_new"
+        label = st.text_input("Category name", value="" if d is None else d["label"], key=f"tgc_label_{k}").strip()
+        vals_txt = st.text_area("Tags (one per line)", value="" if d is None else "\n".join(d.get("values", [])),
+                                height=200, key=f"tgc_vals_{k}")
+        c1, c2 = st.columns([1, 3])
+        if c1.button("💾 Save category", type="primary", key=f"tgc_save_{k}"):
+            vals = list(dict.fromkeys(v.strip() for v in vals_txt.splitlines() if v.strip()))
+            if not label:
+                st.error("Give the category a name.")
+            elif any(x["label"] == label and x is not d for x in dims):
+                st.error(f"There's already a category called “{label}”.")
+            else:
+                if d is None:
+                    import re
+                    base = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_") or "category"
+                    key_, i = base, 2
+                    while any(x["key"] == key_ for x in dims):
+                        key_ = f"{base}_{i}"; i += 1
+                    dims.append({"key": key_, "label": label, "values": vals})
+                    summary = f"add tag category {label}"
+                else:
+                    summary = f"edit tag category {label}"
+                    d["label"], d["values"] = label, vals
+                cfg["dimensions"] = dims
+                save_tag_config(cfg, summary, editor)
+                st.success("Saved.")
+                st.rerun()
+        if d is not None and c2.checkbox(f"Delete “{d['label']}”", key=f"tgc_del_{k}"):
+            st.warning("Projects keep their tags in this category, but it won't show on the board anymore.")
+            if st.button("Yes, delete this category", key=f"tgc_delyes_{k}"):
+                cfg["dimensions"] = [x for x in dims if x is not d]
+                save_tag_config(cfg, f"delete tag category {d['label']}", editor)
+                st.rerun()
+
+    with t_tag:
+      if not dims:
+        st.info("No tag categories yet. Add one under **Edit categories**.")
+      else:
+        a1, a2 = st.columns(2)
+        dlabel = a1.selectbox("Category", [d["label"] for d in dims], key="tg_dim")
+        d = next(x for x in dims if x["label"] == dlabel)
+        NEW = "➕ New tag…"
+        val = a2.selectbox("Tag", d.get("values", []) + [NEW], key=f"tg_val_{d['key']}")
+        if val == NEW:
+            val = a2.text_input("New tag name", key=f"tg_new_{d['key']}").strip()
+        if val:
+            have = [p["id"] for p in active if val in tags_of(p, d["key"])]
+            sel = st.multiselect(f"Projects tagged “{val}”", list(by_id), default=have, format_func=lambda i: pname(by_id[i]),
+                                 key=f"tg_sel_{d['key']}_{val}", placeholder="Pick projects")
+            if st.button("💾 Save", type="primary", key=f"tg_save_{d['key']}_{val}"):
+                sel_set, act_ids = set(sel), set(by_id)
+                def _mut(ps):
+                    for p in ps:
+                        if p["id"] in act_ids:
+                            _set_tag(p, d["key"], val, p["id"] in sel_set)
+                if val not in d.get("values", []):
+                    d.setdefault("values", []).append(val)
+                    save_tag_config(cfg, f"add tag {dlabel}: {val}", editor)
+                apply_many(_mut, f"tag {dlabel}: {val} ({len(sel)} projects)", editor)
+                st.success(f"Saved: {len(sel)} project{'s' if len(sel) != 1 else ''} tagged “{val}”.")
+                st.rerun()
+
+    with t_proj:
+      if not dims:
+        st.info("No tag categories yet. Add one under **Edit categories**.")
+      else:
+        pid = st.selectbox("Project", sorted(by_id, key=lambda i: pname(by_id[i]).lower()),
+                           format_func=lambda i: pname(by_id[i]), key="tg_proj")
+        p = by_id[pid]
+        new_tags = {}
+        cols_ = st.columns(2)
+        for j, d in enumerate(dims):
+            cur = tags_of(p, d["key"])
+            opts = d.get("values", []) + [v for v in cur if v not in d.get("values", [])]
+            new_tags[d["key"]] = cols_[j % 2].multiselect(d["label"], opts, default=cur, key=f"tgp_{pid}_{d['key']}",
+                                                         help=d.get("help"))
+        if st.button("💾 Save tags", type="primary", key=f"tgp_save_{pid}"):
+            clean = {k: v for k, v in new_tags.items() if v}
+            def _mut(ps):
+                for q in ps:
+                    if q["id"] == pid:
+                        ov = q.setdefault("overview", {})
+                        if clean:
+                            ov["tags"] = clean
+                        else:
+                            ov.pop("tags", None)
+            apply_many(_mut, f"tags for {pname(p)}", editor)
+            st.success("Saved.")
+            st.rerun()
+
+if view_slug == "tags":
+    render_tags()
+    st.stop()
+
 
 st.caption(f"{len(active)} active projects · {len(people)} people · grouped into 4 research buckets. "
            "Excludes Done & Sunsetted. Live from the project database.")
