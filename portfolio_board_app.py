@@ -389,11 +389,13 @@ def render_tags():
                                   help="Select your name to add or change tags. Editing is limited to research leads.")
     editor = editor_sel if editor_sel in EDITORS else ""
 
-    g1, g2 = st.columns([1, 2])
-    group_by = g1.selectbox("Group by", list(groupings), index=3 if len(groupings) > 3 else 0)
+    NONE = "No grouping (list)"
+    g1, g2, g3 = st.columns([1.2, 2, 0.8], vertical_alignment="bottom")
+    group_by = g1.selectbox("Group by", [NONE] + list(groupings), index=4 if len(groupings) > 3 else 0)
     filt_opts = [f"{d['label']}: {v}" for d in dims for v in d.get("values", [])]
     filt = g2.multiselect("Only show projects tagged", filt_opts, placeholder="All projects",
                           help="Within one category, a project needs any of the picked tags; across categories, all of them.")
+    details = g3.toggle("Show details", value=False, help="Show each project's bucket, stage, people and other tags.")
 
     def passes(p):
         by_dim = {}
@@ -405,49 +407,79 @@ def render_tags():
                 return False
         return True
 
-    values, key_fn, color_fn = groupings[group_by]
     shown = [p for p in active if passes(p)]
-    groups = {v: [] for v in values}
-    groups[NO_GROUP] = []
-    for p in shown:
-        ks = [k for k in key_fn(p) if k in groups] or [NO_GROUP]
-        for k in ks:
-            groups[k].append(p)
-    order = [v for v in values if groups[v]] + [v for v in values if not groups[v]] + [NO_GROUP]
+    leads_of = lambda p: ", ".join(m["name"] for m in visible_team(dedupe_team((p.get("overview") or {}).get("team")))
+                                   if m["role"] == "Lead")
 
-    def card(p, color):
-        ov = p.get("overview") or {}
-        stage = (p.get("process") or {}).get("stage")
-        ppl = ", ".join(f"<b>{m['name']}</b>" if m["role"] == "Lead" else m["name"]
-                        for m in visible_team(dedupe_team(ov.get("team")))) or "<i>No one assigned</i>"
-        chips = "".join(
-            f"<span style='display:inline-block;font-size:0.68rem;border:1px solid rgba(127,127,127,.35);"
-            f"border-radius:999px;padding:0 7px;margin:2px 3px 0 0'>{v}</span>"
-            for d in dims if d["label"] != group_by for v in tags_of(p, d["key"]))
-        return (f"<div style='border:1px solid #ddd;border-left:3px solid {color};border-radius:10px;"
-                f"padding:9px 11px;margin-bottom:9px'><div style='font-weight:600;font-size:0.95rem'>{pname(p)}</div>"
-                f"<div style='font-family:monospace;font-size:0.72rem;color:{BUCKET_COLOR[bucket_of(p)]};margin:3px 0 4px'>"
-                f"{bucket_of(p)} · {STAGE_LABELS.get(stage, stage)}</div>"
-                f"<div style='font-size:0.82rem;color:#555'>{ppl}</div>{f'<div>{chips}</div>' if chips else ''}</div>")
+    def tag_table(ps, with_details):
+        import pandas as pd
+        rows = []
+        for p in sorted(ps, key=lambda p: pname(p).lower()):
+            r = {"Project": pname(p)}
+            if with_details:
+                r.update({"Bucket": bucket_of(p), "Stage": STAGE_LABELS.get((p.get("process") or {}).get("stage"), ""),
+                          "Leads": leads_of(p)})
+            r.update({d["label"]: tags_of(p, d["key"]) for d in dims})
+            rows.append(r)
+        return pd.DataFrame(rows, columns=["Project"] + (["Bucket", "Stage", "Leads"] if with_details else [])
+                            + [d["label"] for d in dims])
 
-    nonempty = [g for g in order if groups[g]]
-    if not nonempty:
-        st.info("No projects match these filters.")
-    per_row = 4
-    for i in range(0, len(nonempty), per_row):
-        cols_ = st.columns(per_row)
-        for col, g in zip(cols_, nonempty[i:i + per_row]):
-            color = "#94a3b8" if g == NO_GROUP else (color_fn(g) or "#94a3b8")
-            with col:
-                st.markdown(f"<div style='border-bottom:3px solid {color};padding-bottom:6px;margin:8px 0 10px'>"
-                            f"<span style='font-weight:700'>{g}</span> <span style='color:{color};font-family:monospace;"
-                            f"float:right'>{len(groups[g])}</span></div>", unsafe_allow_html=True)
-                with st.container(height=520, border=False):
-                    for p in sorted(groups[g], key=lambda p: pname(p).lower()):
-                        st.markdown(card(p, color), unsafe_allow_html=True)
-    empty = [g for g in values if not groups[g]]
-    if empty:
-        st.caption("No projects yet: " + ", ".join(empty))
+    if group_by == NONE:
+        st.dataframe(tag_table(shown, details), hide_index=True, use_container_width=True,
+                     height=min(36 * (len(shown) + 1) + 4, 640),
+                     column_config={d["label"]: st.column_config.ListColumn(d["label"]) for d in dims})
+        st.caption(f"{len(shown)} projects. To change tags in a table like this, use **Edit in a table** below.")
+        values = []
+    else:
+        values, key_fn, color_fn = groupings[group_by]
+    if group_by != NONE:
+        groups = {v: [] for v in values}
+        groups[NO_GROUP] = []
+        for p in shown:
+            ks = [k for k in key_fn(p) if k in groups] or [NO_GROUP]
+            for k in ks:
+                groups[k].append(p)
+        order = [v for v in values if groups[v]] + [v for v in values if not groups[v]] + [NO_GROUP]
+
+        def card(p, color):
+            ov = p.get("overview") or {}
+            stage = (p.get("process") or {}).get("stage")
+            ppl = ", ".join(f"<b>{m['name']}</b>" if m["role"] == "Lead" else m["name"]
+                            for m in visible_team(dedupe_team(ov.get("team")))) or "<i>No one assigned</i>"
+            chips = "".join(
+                f"<span style='display:inline-block;font-size:0.68rem;border:1px solid rgba(127,127,127,.35);"
+                f"border-radius:999px;padding:0 7px;margin:2px 3px 0 0'>{v}</span>"
+                for d in dims if d["label"] != group_by for v in tags_of(p, d["key"]))
+            return (f"<div style='border:1px solid #ddd;border-left:3px solid {color};border-radius:10px;"
+                    f"padding:9px 11px;margin-bottom:9px'><div style='font-weight:600;font-size:0.95rem'>{pname(p)}</div>"
+                    f"<div style='font-family:monospace;font-size:0.72rem;color:{BUCKET_COLOR[bucket_of(p)]};margin:3px 0 4px'>"
+                    f"{bucket_of(p)} · {STAGE_LABELS.get(stage, stage)}</div>"
+                    f"<div style='font-size:0.82rem;color:#555'>{ppl}</div>{f'<div>{chips}</div>' if chips else ''}</div>")
+
+        nonempty = [g for g in order if groups[g]]
+        if not nonempty:
+            st.info("No projects match these filters.")
+        per_row = 4
+        for i in range(0, len(nonempty), per_row):
+            cols_ = st.columns(per_row)
+            for col, g in zip(cols_, nonempty[i:i + per_row]):
+                color = "#94a3b8" if g == NO_GROUP else (color_fn(g) or "#94a3b8")
+                with col:
+                    st.markdown(f"<div style='border-bottom:3px solid {color};padding-bottom:6px;margin:8px 0 10px'>"
+                                f"<span style='font-weight:700'>{g}</span> <span style='color:{color};font-family:monospace;"
+                                f"float:right'>{len(groups[g])}</span></div>", unsafe_allow_html=True)
+                    items_ = sorted(groups[g], key=lambda p: pname(p).lower())
+                    if details:
+                        with st.container(height=520, border=False):
+                            for p in items_:
+                                st.markdown(card(p, color), unsafe_allow_html=True)
+                    else:   # compact: one line per project
+                        st.markdown("".join(
+                            f"<div style='font-size:0.85rem;padding:3px 0 3px 8px;border-left:3px solid {color};"
+                            f"margin-bottom:3px'>{pname(p)}</div>" for p in items_), unsafe_allow_html=True)
+        empty = [g for g in values if not groups[g]]
+        if empty:
+            st.caption("No projects yet: " + ", ".join(empty))
 
     # ── Tagging ──────────────────────────────────────────────────────────────
     st.markdown("<div id='tg-edit' class='pf-anchor'></div><div class='pf-h1'>🏷️ Tag projects</div>",
@@ -457,7 +489,60 @@ def render_tags():
                    "Editing is limited to: " + ", ".join(EDITORS) + ".")
         return
     by_id = {p["id"]: p for p in active}
-    t_tag, t_proj, t_cat = st.tabs(["Apply one tag to many projects", "Edit one project's tags", "Edit categories"])
+    t_table, t_tag, t_proj, t_cat = st.tabs(["Edit in a table", "Apply one tag to many projects",
+                                             "Edit one project's tags", "Edit categories"])
+
+    with t_table:
+      if not dims:
+        st.info("No tag categories yet. Add one under **Edit categories**.")
+      else:
+        st.caption("Click a cell to add or remove tags; type to search, or type a new tag and press Enter to add it. "
+                   "The table shows the projects that match the filter above. Click **Save table** when you're done.")
+        tbl_ps = sorted(shown, key=lambda p: pname(p).lower())
+        df = tag_table(tbl_ps, False)
+        df.insert(0, "_id", [p["id"] for p in tbl_ps])
+        edited = st.data_editor(
+            df, hide_index=True, use_container_width=True, num_rows="fixed", key=f"tg_tbl_{len(tbl_ps)}_{hash(tuple(filt))}",
+            disabled=["_id", "Project"], column_order=["Project"] + [d["label"] for d in dims],
+            height=min(36 * (len(tbl_ps) + 1) + 4, 640),
+            column_config={d["label"]: st.column_config.MultiselectColumn(
+                d["label"], options=d.get("values", []), accept_new_options=True, help=d.get("help"), width="medium")
+                for d in dims})
+        if st.button("💾 Save table", type="primary", key="tg_tbl_save"):
+            changes, new_vals = {}, {}
+            for _, row in edited.iterrows():
+                p = by_id[row["_id"]]
+                cell = lambda x: [] if x is None or isinstance(x, float) else [str(v) for v in x]   # NaN/None → no tags
+                new = {d["key"]: cell(row[d["label"]]) for d in dims}
+                old = {d["key"]: tags_of(p, d["key"]) for d in dims}
+                if new != old:
+                    changes[p["id"]] = new
+                    for d in dims:
+                        for v in new[d["key"]]:
+                            if v not in d.get("values", []):
+                                new_vals.setdefault(d["key"], []).append(v)
+            if not changes:
+                st.info("Nothing changed.")
+            else:
+                if new_vals:
+                    for d in dims:
+                        for v in dict.fromkeys(new_vals.get(d["key"], [])):
+                            d.setdefault("values", []).append(v)
+                    cfg["dimensions"] = dims
+                    save_tag_config(cfg, "add tags from the table", editor)
+                def _mut(ps):
+                    for q in ps:
+                        if q["id"] in changes:
+                            ov = q.setdefault("overview", {})
+                            keep = {k: v for k, v in (ov.get("tags") or {}).items() if k not in changes[q["id"]]}
+                            merged = {**keep, **{k: v for k, v in changes[q["id"]].items() if v}}
+                            if merged:
+                                ov["tags"] = merged
+                            else:
+                                ov.pop("tags", None)
+                apply_many(_mut, f"edit tags in table ({len(changes)} projects)", editor)
+                st.success(f"Saved tags for {len(changes)} project{'s' if len(changes) != 1 else ''}.")
+                st.rerun()
 
     with t_cat:
         st.caption("Rename a category, change its list of tags (one per line), add a category, or delete one. "
@@ -491,6 +576,24 @@ def render_tags():
                 cfg["dimensions"] = dims
                 save_tag_config(cfg, summary, editor)
                 st.success("Saved.")
+                st.rerun()
+        if d is not None and d.get("values"):
+            st.markdown("**Rename a tag** everywhere it's used (the list above and every project that has it)")
+            r1, r2, r3 = st.columns([2, 2, 1], vertical_alignment="bottom")
+            old_v = r1.selectbox("Tag", d["values"], key=f"tgc_ren_old_{k}")
+            new_v = r2.text_input("New name", key=f"tgc_ren_new_{k}").strip()
+            if r3.button("Rename", key=f"tgc_ren_go_{k}") and new_v and new_v != old_v:
+                d["values"] = [new_v if v == old_v else v for v in d["values"]]
+                d["values"] = list(dict.fromkeys(d["values"]))
+                cfg["dimensions"] = dims
+                save_tag_config(cfg, f"rename tag {d['label']}: {old_v} → {new_v}", editor)
+                def _mut(ps, key_=d["key"]):
+                    for q in ps:
+                        tg = (q.get("overview") or {}).get("tags") or {}
+                        if old_v in (tg.get(key_) or []):
+                            tg[key_] = list(dict.fromkeys(new_v if v == old_v else v for v in tg[key_]))
+                apply_many(_mut, f"rename tag {d['label']}: {old_v} → {new_v}", editor)
+                st.success(f"Renamed “{old_v}” to “{new_v}”.")
                 st.rerun()
         if d is not None and c2.checkbox(f"Delete “{d['label']}”", key=f"tgc_del_{k}"):
             st.warning("Projects keep their tags in this category, but it won't show on the board anymore.")
