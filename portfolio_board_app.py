@@ -381,7 +381,7 @@ def render_tags():
     with h1:
         st.markdown("<div id='tg-group' class='pf-anchor'></div><div class='pf-h1'>Group projects by tag</div>"
                     "<div class='pf-def'><div class='lbl'>What tags are</div>"
-                    "Tags are <b>labels you add to projects</b> (funder, study focus, grant goal, design…) so the "
+                    "Tags are <b>labels you add to projects</b> (grant, study focus, grant goal, design…) so the "
                     "portfolio can be grouped and counted different ways. A project can have several tags in a "
                     "category, so it can show up in more than one group.</div>", unsafe_allow_html=True)
     with h2:
@@ -389,13 +389,15 @@ def render_tags():
                                   help="Select your name to add or change tags. Editing is limited to research leads.")
     editor = editor_sel if editor_sel in EDITORS else ""
 
-    NONE = "No grouping (list)"
-    g1, g2, g3 = st.columns([1.2, 2, 0.8], vertical_alignment="bottom")
-    group_by = g1.selectbox("Group by", [NONE] + list(groupings), index=4 if len(groupings) > 3 else 0)
+    g1, g2, g3 = st.columns([1.6, 1.8, 0.7], vertical_alignment="bottom")
+    first = next((d["label"] for d in dims), "Research bucket")
+    group_dims = g1.multiselect("Group by (pick one or more, in order)", list(groupings), default=[first],
+                                placeholder="No grouping: one list",
+                                help="The first choice makes the columns; each later choice splits a column into sub-groups.")
     filt_opts = [f"{d['label']}: {v}" for d in dims for v in d.get("values", [])]
     filt = g2.multiselect("Only show projects tagged", filt_opts, placeholder="All projects",
                           help="Within one category, a project needs any of the picked tags; across categories, all of them.")
-    details = g3.toggle("Show details", value=False, help="Show each project's bucket, stage, people and other tags.")
+    expand_all = g3.toggle("Expand all", value=False, help="Open every project to show its details and tags.")
 
     def passes(p):
         by_dim = {}
@@ -424,60 +426,115 @@ def render_tags():
         return pd.DataFrame(rows, columns=["Project"] + (["Bucket", "Stage", "Leads"] if with_details else [])
                             + [d["label"] for d in dims])
 
-    if group_by == NONE:
-        st.dataframe(tag_table(shown, details), hide_index=True, use_container_width=True,
+    def save_project_tags(pid, new_tags):
+        """Replace one project's tags (only the categories in new_tags); add any brand-new values to the lists."""
+        added = False
+        for d in dims:
+            for v in new_tags.get(d["key"], []):
+                if v not in d.get("values", []):
+                    d.setdefault("values", []).append(v)
+                    added = True
+        if added:
+            cfg["dimensions"] = dims
+            save_tag_config(cfg, "add tags", editor)
+        def _mut(ps):
+            for q in ps:
+                if q["id"] == pid:
+                    ov = q.setdefault("overview", {})
+                    keep = {k: v for k, v in (ov.get("tags") or {}).items() if k not in new_tags}
+                    merged = {**keep, **{k: v for k, v in new_tags.items() if v}}
+                    if merged:
+                        ov["tags"] = merged
+                    else:
+                        ov.pop("tags", None)
+        apply_many(_mut, f"tags for {pname(next(x for x in active if x['id'] == pid))}", editor)
+
+    # One study: click to expand; editors can change its tags right there
+    editing = st.session_state.get("tg_editing")   # (project id, where it was opened) or None
+    def study(p, where):
+        ov = p.get("overview") or {}
+        stage = STAGE_LABELS.get((p.get("process") or {}).get("stage"), "")
+        here = editing == (p["id"], where)
+        with st.expander(pname(p), expanded=expand_all or here):
+            ppl = ", ".join(f"<b>{m['name']}</b>" if m["role"] == "Lead" else m["name"]
+                            for m in visible_team(dedupe_team(ov.get("team")))) or "<i>No one assigned</i>"
+            st.markdown(f"<div style='font-size:0.8rem;line-height:1.45'><span style='color:{BUCKET_COLOR[bucket_of(p)]}'>"
+                        f"{bucket_of(p)} · {stage}</span><br>{ppl}</div>", unsafe_allow_html=True)
+            if here:
+                new_tags = {}
+                for d in dims:
+                    cur = tags_of(p, d["key"])
+                    opts = d.get("values", []) + [v for v in cur if v not in d.get("values", [])]
+                    new_tags[d["key"]] = st.multiselect(d["label"], opts, default=cur, accept_new_options=True,
+                                                        key=f"tgx_{where}_{p['id']}_{d['key']}", help=d.get("help"))
+                b1, b2 = st.columns(2)
+                if b1.button("💾 Save", type="primary", key=f"tgx_save_{where}_{p['id']}", use_container_width=True):
+                    save_project_tags(p["id"], new_tags)
+                    st.session_state.pop("tg_editing", None)
+                    st.rerun()
+                if b2.button("Cancel", key=f"tgx_cancel_{where}_{p['id']}", use_container_width=True):
+                    st.session_state.pop("tg_editing", None)
+                    st.rerun()
+            else:
+                lines = [f"<b>{d['label']}:</b> {', '.join(tags_of(p, d['key']))}" for d in dims if tags_of(p, d["key"])]
+                st.markdown(f"<div style='font-size:0.8rem;line-height:1.45;margin-top:4px'>"
+                            f"{'<br>'.join(lines) if lines else '<i>No tags yet</i>'}</div>", unsafe_allow_html=True)
+                if editor and st.button("✏️ Edit tags", key=f"tgx_edit_{where}_{p['id']}"):
+                    st.session_state["tg_editing"] = (p["id"], where)
+                    st.rerun()
+
+    def keys_for(p, gname):
+        vals, key_fn, _ = groupings[gname]
+        return [k for k in key_fn(p) if k in vals] or [NO_GROUP]
+
+    def rank(gname, k):
+        vals = groupings[gname][0]
+        return (k == NO_GROUP, vals.index(k) if k in vals else 999)
+
+    if not group_dims:
+        st.dataframe(tag_table(shown, True), hide_index=True, use_container_width=True,
                      height=min(36 * (len(shown) + 1) + 4, 640),
                      column_config={d["label"]: st.column_config.ListColumn(d["label"]) for d in dims})
         st.caption(f"{len(shown)} projects. To change tags in a table like this, use **Edit in a table** below.")
-        values = []
     else:
-        values, key_fn, color_fn = groupings[group_by]
-    if group_by != NONE:
-        groups = {v: [] for v in values}
-        groups[NO_GROUP] = []
+        top, rest = group_dims[0], group_dims[1:]
+        color_fn = groupings[top][2]
+        groups = {}
         for p in shown:
-            ks = [k for k in key_fn(p) if k in groups] or [NO_GROUP]
-            for k in ks:
-                groups[k].append(p)
-        order = [v for v in values if groups[v]] + [v for v in values if not groups[v]] + [NO_GROUP]
-
-        def card(p, color):
-            ov = p.get("overview") or {}
-            stage = (p.get("process") or {}).get("stage")
-            ppl = ", ".join(f"<b>{m['name']}</b>" if m["role"] == "Lead" else m["name"]
-                            for m in visible_team(dedupe_team(ov.get("team")))) or "<i>No one assigned</i>"
-            chips = "".join(
-                f"<span style='display:inline-block;font-size:0.68rem;border:1px solid rgba(127,127,127,.35);"
-                f"border-radius:999px;padding:0 7px;margin:2px 3px 0 0'>{v}</span>"
-                for d in dims if d["label"] != group_by for v in tags_of(p, d["key"]))
-            return (f"<div style='border:1px solid #ddd;border-left:3px solid {color};border-radius:10px;"
-                    f"padding:9px 11px;margin-bottom:9px'><div style='font-weight:600;font-size:0.95rem'>{pname(p)}</div>"
-                    f"<div style='font-family:monospace;font-size:0.72rem;color:{BUCKET_COLOR[bucket_of(p)]};margin:3px 0 4px'>"
-                    f"{bucket_of(p)} · {STAGE_LABELS.get(stage, stage)}</div>"
-                    f"<div style='font-size:0.82rem;color:#555'>{ppl}</div>{f'<div>{chips}</div>' if chips else ''}</div>")
-
-        nonempty = [g for g in order if groups[g]]
-        if not nonempty:
+            for k in keys_for(p, top):
+                groups.setdefault(k, []).append(p)
+        order = sorted(groups, key=lambda k: rank(top, k))
+        if not order:
             st.info("No projects match these filters.")
         per_row = 4
-        for i in range(0, len(nonempty), per_row):
+        for i in range(0, len(order), per_row):
             cols_ = st.columns(per_row)
-            for col, g in zip(cols_, nonempty[i:i + per_row]):
+            for col, g in zip(cols_, order[i:i + per_row]):
                 color = "#94a3b8" if g == NO_GROUP else (color_fn(g) or "#94a3b8")
                 with col:
                     st.markdown(f"<div style='border-bottom:3px solid {color};padding-bottom:6px;margin:8px 0 10px'>"
                                 f"<span style='font-weight:700'>{g}</span> <span style='color:{color};font-family:monospace;"
                                 f"float:right'>{len(groups[g])}</span></div>", unsafe_allow_html=True)
-                    items_ = sorted(groups[g], key=lambda p: pname(p).lower())
-                    if details:
-                        with st.container(height=520, border=False):
-                            for p in items_:
-                                st.markdown(card(p, color), unsafe_allow_html=True)
-                    else:   # compact: one line per project
-                        st.markdown("".join(
-                            f"<div style='font-size:0.85rem;padding:3px 0 3px 8px;border-left:3px solid {color};"
-                            f"margin-bottom:3px'>{pname(p)}</div>" for p in items_), unsafe_allow_html=True)
-        empty = [g for g in values if not groups[g]]
+                    # Sub-groups: every combination of the later group-by choices
+                    subs = {}
+                    for p in groups[g]:
+                        combos = [()]
+                        for gname in rest:
+                            combos = [c + (k,) for c in combos for k in keys_for(p, gname)]
+                        for c in combos:
+                            subs.setdefault(c, []).append(p)
+                    sub_order = sorted(subs, key=lambda c: [rank(gn, k) for gn, k in zip(rest, c)])
+                    long_list = sum(len(v) for v in subs.values()) > 14 and not expand_all
+                    with (st.container(height=640, border=False) if long_list else st.container()):
+                        for c in sub_order:
+                            if rest:
+                                st.markdown(f"<div style='font-size:0.75rem;font-weight:700;color:#6b7280;margin:10px 0 4px;"
+                                            f"text-transform:uppercase;letter-spacing:.04em;border-left:3px solid {color};"
+                                            f"padding-left:6px'>{' · '.join(c)} <span style='font-weight:400'>({len(subs[c])})</span></div>",
+                                            unsafe_allow_html=True)
+                            for p in sorted(subs[c], key=lambda p: pname(p).lower()):
+                                study(p, f"{g}|{'|'.join(c)}")
+        empty = [v for v in groupings[top][0] if v not in groups]
         if empty:
             st.caption("No projects yet: " + ", ".join(empty))
 
