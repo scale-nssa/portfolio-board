@@ -3,7 +3,7 @@
 SCALE Research Portfolio — public board.
 
 A standalone Streamlit app (separate from the private admin app.py) that shows
-all ACTIVE projects grouped into the four research buckets, with the people on
+all ACTIVE studies (not tasks or products) grouped into the four research buckets, with the people on
 each, and lets anyone reassign a project's bucket / edit its people, stage, and
 name. Reads and writes data/projects.json in scale-nssa/project-database, so it
 stays in sync with the main database.
@@ -169,7 +169,9 @@ def bucket_of(p):
     return b if b in BUCKETS else "Implementation & Other"
 
 def active_projects(projects):
-    return [p for p in projects if (p.get("process") or {}).get("stage") not in EXCLUDE]
+    """Active studies only. Records with "type": "product" or "task" belong to the admin app, not this board."""
+    return [p for p in projects if (p.get("process") or {}).get("stage") not in EXCLUDE
+            and p.get("type", "study") not in ("product", "task")]
 
 # ── Session ──────────────────────────────────────────────────────────────────
 if "editor" not in st.session_state:
@@ -372,7 +374,7 @@ def render_tags():
                                  (lambda vs: lambda v: TAG_COLORS[vs.index(v) % len(TAG_COLORS)] if v in vs else "#94a3b8")(vals))
 
     n_tagged = sum(1 for p in active if (p.get("overview") or {}).get("tags"))
-    st.caption(f"{len(active)} active projects · {n_tagged} tagged so far. Excludes Done & Sunsetted. "
+    st.caption(f"{len(active)} active projects · {n_tagged} tagged so far. Studies only (no tasks or products); excludes Done & Sunsetted. "
                "Live from the project database.")
     st.markdown("<div class='pf-jump'>On this page:<a href='#tg-group'>Group projects</a>"
                 "<a href='#tg-edit'>Tag projects ↓</a></div>", unsafe_allow_html=True)
@@ -721,7 +723,7 @@ if view_slug == "tags":
 
 
 st.caption(f"{len(active)} active projects · {len(people)} people · grouped into 4 research buckets. "
-           "Excludes Done & Sunsetted. Live from the project database.")
+           "Studies only (no tasks or products); excludes Done & Sunsetted. Live from the project database.")
 st.markdown("<div class='pf-jump'>On this page:<a href='#pf-buckets'>Research buckets</a>"
             "<a href='#pf-collab'>Who's working together ↓</a></div>", unsafe_allow_html=True)
 
