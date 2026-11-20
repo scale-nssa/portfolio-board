@@ -289,7 +289,44 @@ TAG_COLORS = ["#5a5fc0", "#0d8a99", "#b3364d", "#bd7a2c", "#2563eb", "#0d9488", 
               "#65a30d", "#7c3aed", "#475569", "#0891b2"]
 NO_GROUP = "Not tagged"
 
+# Domain is a fixed category backed by the existing overview.domain field (shared with the admin app).
+# The board shows three values; GDTF (and anything else) shows as "Other" and is kept as-is on save.
+DOMAIN_KEY = "__domain"
+DOMAIN_LABELS = ["NSSA", "AI Hub", "Other"]
+DOMAIN_DIM = {"key": DOMAIN_KEY, "label": "Domain", "values": DOMAIN_LABELS, "fixed": True}
+
+def domains_of(p):
+    out = []
+    for d in (p.get("overview") or {}).get("domain") or []:
+        lab = {"NSSA": "NSSA", "AI_Hub": "AI Hub"}.get(d, "Other")
+        if lab not in out:
+            out.append(lab)
+    return sorted(out, key=DOMAIN_LABELS.index)
+
+def set_domains(p, labels):
+    ov = p.setdefault("overview", {})
+    orig = ov.get("domain") or []
+    out = (["NSSA"] if "NSSA" in labels else []) + (["AI_Hub"] if "AI Hub" in labels else [])
+    if "Other" in labels:
+        out += [d for d in orig if d not in ("NSSA", "AI_Hub")] or ["Other"]
+    ov["domain"] = out
+
+def write_tags(p, new_tags):
+    """Set the given categories on one project (others untouched); Domain goes to overview.domain."""
+    ov = p.setdefault("overview", {})
+    nt = dict(new_tags)
+    if DOMAIN_KEY in nt:
+        set_domains(p, nt.pop(DOMAIN_KEY))
+    keep = {k: v for k, v in (ov.get("tags") or {}).items() if k not in nt}
+    merged = {**keep, **{k: v for k, v in nt.items() if v}}
+    if merged:
+        ov["tags"] = merged
+    else:
+        ov.pop("tags", None)
+
 def tags_of(p, key):
+    if key == DOMAIN_KEY:
+        return domains_of(p)
     return list(((p.get("overview") or {}).get("tags") or {}).get(key) or [])
 
 def research_teams_of(p):
@@ -329,6 +366,7 @@ def save_tag_config(cfg, summary, editor):
     """Write the tag dimensions/values file (used when someone adds a new tag value)."""
     if editor not in EDITORS:
         return
+    cfg = {**cfg, "dimensions": [d for d in cfg.get("dimensions", []) if not d.get("fixed")]}
     content = json.dumps(cfg, indent=2, ensure_ascii=False)
     repo = _repo()
     if repo:
@@ -343,6 +381,10 @@ def save_tag_config(cfg, summary, editor):
     st.cache_data.clear()
 
 def _set_tag(p, key, value, on):
+    if key == DOMAIN_KEY:
+        cur = [v for v in domains_of(p) if v != value]
+        set_domains(p, cur + [value] if on else cur)
+        return
     ov = p.setdefault("overview", {})
     tags = ov.setdefault("tags", {})
     vals = [v for v in (tags.get(key) or []) if v != value]
@@ -357,7 +399,7 @@ def _set_tag(p, key, value, on):
 
 def render_tags():
     cfg = load_tag_config()
-    dims = cfg.get("dimensions", [])
+    dims = [DOMAIN_DIM] + cfg.get("dimensions", [])
     pname = lambda p: (p.get("overview") or {}).get("name") or p["id"]
     team_color = {t["lead"]: t.get("color", "#94a3b8") for t in team_data.get("teams", [])}
 
@@ -442,13 +484,7 @@ def render_tags():
         def _mut(ps):
             for q in ps:
                 if q["id"] == pid:
-                    ov = q.setdefault("overview", {})
-                    keep = {k: v for k, v in (ov.get("tags") or {}).items() if k not in new_tags}
-                    merged = {**keep, **{k: v for k, v in new_tags.items() if v}}
-                    if merged:
-                        ov["tags"] = merged
-                    else:
-                        ov.pop("tags", None)
+                    write_tags(q, new_tags)
         apply_many(_mut, f"tags for {pname(next(x for x in active if x['id'] == pid))}", editor)
 
     # One study: click to expand; editors can change its tags right there
@@ -467,7 +503,7 @@ def render_tags():
                 for d in dims:
                     cur = tags_of(p, d["key"])
                     opts = d.get("values", []) + [v for v in cur if v not in d.get("values", [])]
-                    new_tags[d["key"]] = st.multiselect(d["label"], opts, default=cur, accept_new_options=True,
+                    new_tags[d["key"]] = st.multiselect(d["label"], opts, default=cur, accept_new_options=not d.get("fixed"),
                                                         key=f"tgx_{where}_{p['id']}_{d['key']}", help=d.get("help"))
                 b1, b2 = st.columns(2)
                 if b1.button("💾 Save", type="primary", key=f"tgx_save_{where}_{p['id']}", use_container_width=True):
@@ -565,7 +601,7 @@ def render_tags():
             disabled=["_id", "Project"], column_order=["Project"] + [d["label"] for d in dims],
             height=min(36 * (len(tbl_ps) + 1) + 4, 640),
             column_config={d["label"]: st.column_config.MultiselectColumn(
-                d["label"], options=d.get("values", []), accept_new_options=True, help=d.get("help"), width="medium")
+                d["label"], options=d.get("values", []), accept_new_options=not d.get("fixed"), help=d.get("help"), width="medium")
                 for d in dims})
         if st.button("💾 Save table", type="primary", key="tg_tbl_save"):
             changes, new_vals = {}, {}
@@ -592,13 +628,7 @@ def render_tags():
                 def _mut(ps):
                     for q in ps:
                         if q["id"] in changes:
-                            ov = q.setdefault("overview", {})
-                            keep = {k: v for k, v in (ov.get("tags") or {}).items() if k not in changes[q["id"]]}
-                            merged = {**keep, **{k: v for k, v in changes[q["id"]].items() if v}}
-                            if merged:
-                                ov["tags"] = merged
-                            else:
-                                ov.pop("tags", None)
+                            write_tags(q, changes[q["id"]])
                 apply_many(_mut, f"edit tags in table ({len(changes)} projects)", editor)
                 st.success(f"Saved tags for {len(changes)} project{'s' if len(changes) != 1 else ''}.")
                 st.rerun()
@@ -607,7 +637,7 @@ def render_tags():
         st.caption("Rename a category, change its list of tags (one per line), add a category, or delete one. "
                    "Taking a tag off a list doesn't remove it from projects that already have it.")
         NEWCAT = "➕ New category"
-        cat = st.selectbox("Category", [d["label"] for d in dims] + [NEWCAT], key="tgc_pick")
+        cat = st.selectbox("Category", [d["label"] for d in dims if not d.get("fixed")] + [NEWCAT], key="tgc_pick")
         d = next((x for x in dims if x["label"] == cat), None)
         k = d["key"] if d else "_new"
         label = st.text_input("Category name", value="" if d is None else d["label"], key=f"tgc_label_{k}").strip()
@@ -669,7 +699,7 @@ def render_tags():
         dlabel = a1.selectbox("Category", [d["label"] for d in dims], key="tg_dim")
         d = next(x for x in dims if x["label"] == dlabel)
         NEW = "➕ New tag…"
-        val = a2.selectbox("Tag", d.get("values", []) + [NEW], key=f"tg_val_{d['key']}")
+        val = a2.selectbox("Tag", d.get("values", []) + ([] if d.get("fixed") else [NEW]), key=f"tg_val_{d['key']}")
         if val == NEW:
             val = a2.text_input("New tag name", key=f"tg_new_{d['key']}").strip()
         if val:
@@ -704,15 +734,10 @@ def render_tags():
             new_tags[d["key"]] = cols_[j % 2].multiselect(d["label"], opts, default=cur, key=f"tgp_{pid}_{d['key']}",
                                                          help=d.get("help"))
         if st.button("💾 Save tags", type="primary", key=f"tgp_save_{pid}"):
-            clean = {k: v for k, v in new_tags.items() if v}
             def _mut(ps):
                 for q in ps:
                     if q["id"] == pid:
-                        ov = q.setdefault("overview", {})
-                        if clean:
-                            ov["tags"] = clean
-                        else:
-                            ov.pop("tags", None)
+                        write_tags(q, new_tags)
             apply_many(_mut, f"tags for {pname(p)}", editor)
             st.success("Saved.")
             st.rerun()
